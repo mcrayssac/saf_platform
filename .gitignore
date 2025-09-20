@@ -104,11 +104,6 @@ temp/
 
 # Editor directories and files
 .vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/*.code-snippets
 
 # Local env files
 .env*.local
