@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+spring:
+  threads.virtual.enabled: true # virtual threads (Java 21+)
+  mvc.async.request-timeout: 30s
+
+  # Kafka (valeurs par défaut, surchargées par profils/env)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+management:
+  endpoints:
+    web.exposure.include: health,info,metrics,prometheus
+  endpoint:
+    health.probes.enabled: true
+
+springdoc:
+  swagger-ui.path: /swagger # UI: http://localhost:8080/swagger
+  api-docs.path: /v3/api-docs

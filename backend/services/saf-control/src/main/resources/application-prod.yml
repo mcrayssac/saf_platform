@@ -1,0 +1,10 @@
+server:
+  port: ${PORT:8080}
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP}
+management:
+  endpoints:
+    web.exposure.include: health,metrics,prometheus
+  endpoint:
+    health.show-details: when_authorized
