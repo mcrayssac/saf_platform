@@ -1,10 +1,12 @@
 package com.acme.saf.saf_control.domain.dto;
 
-import jakarta.validation.constraints.NotBlank;
-import java.util.Map;
-
 public record AgentCreateRequest(
-        @NotBlank String type,
-        Map<String, Object> params
-) {}
-
+    String type,
+    String host,    // NOUVEAU
+    int port        // NOUVEAU
+) {
+    // Constructeur de compatibilité
+    public AgentCreateRequest(String type) {
+        this(type, "localhost", 8080);
+    }
+}
