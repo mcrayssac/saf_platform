@@ -13,6 +13,14 @@ public class Agent {
     private AgentStatus status;
     private Instant lastHeartbeat;
     private final Map<String, String> metadata;
+    private SupervisionPolicy policy;
+
+    public enum SupervisionPolicy {
+        RESTART,
+        RESUME,
+        STOP,
+        QUARANTINE
+    }
 
     public Agent(String agentId, AgentType type, String host, int port) {
         this.agentId = agentId;
@@ -22,6 +30,7 @@ public class Agent {
         this.status = AgentStatus.ACTIVE;
         this.lastHeartbeat = Instant.now();
         this.metadata = new HashMap<>();
+        this.policy = SupervisionPolicy.RESTART;
     }
 
     public void updateHeartbeat() {
@@ -50,4 +59,6 @@ public class Agent {
     public AgentStatus getStatus() { return status; }
     public Instant getLastHeartbeat() { return lastHeartbeat; }
     public Map<String, String> getMetadata() { return new HashMap<>(metadata); }
+    public SupervisionPolicy getPolicy() { return policy; }
+    public void setPolicy(SupervisionPolicy policy) { this.policy = policy; }
 }
