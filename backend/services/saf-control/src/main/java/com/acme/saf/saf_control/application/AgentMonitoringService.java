@@ -79,21 +79,24 @@ public class AgentMonitoringService {
     @Scheduled(fixedRate = 30000)
     public void checkAgentHealth() {
         Instant now = Instant.now();
-        
+
         // Nettoie les heartbeats des agents qui n'existent plus
         Set<String> existingIds = controlService.list().stream()
             .map(AgentView::id)
             .collect(Collectors.toSet());
-        
+
         heartbeats.keySet().retainAll(existingIds);
-        
-        // Log les agents inactifs (optionnel)
+
+        // Vérifie l'état des agents
         controlService.list().forEach(agent -> {
             if (isAgentStale(agent.id(), now)) {
                 System.out.println("⚠️ Agent " + agent.id() + " (" + agent.type() + ") est INACTIF");
+                // Appel au service de supervision
+                supervisionService.handle(agent);
             }
         });
     }
+
 
     /**
      * Enrichit un AgentView avec son statut actuel

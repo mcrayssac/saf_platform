@@ -53,6 +53,10 @@ public class ControlService {
         return running;
     }
 
+    public void update(AgentView updated) {
+        registry.put(updated.id(), updated);
+    }
+
     public void destroy(String id) {
         AgentView removed = registry.remove(id);
         if (removed != null) events.publish("ActorStopped", removed);

@@ -1,0 +1,59 @@
+package com.acme.saf.saf_control.application;
+
+import com.acme.saf.saf_control.domain.dto.AgentStatus;
+import com.acme.saf.saf_control.domain.dto.AgentView;
+import com.acme.saf.saf_control.domain.dto.Agent.SupervisionPolicy;
+import org.springframework.stereotype.Service;
+
+/**
+ * Service responsable d'appliquer les politiques de supervision
+ * lorsque des agents deviennent inactifs ou rencontrent une erreur.
+ */
+@Service
+public class SupervisionService {
+
+    // Référence au service de contrôle pour détruire/redémarrer les agents
+    private final ControlService controlService;
+
+    // Constructeur avec injection de dépendance
+    public SupervisionService(ControlService controlService) {
+        this.controlService = controlService;
+    }
+
+    /**
+     * Applique la politique de supervision pour un agent donné.
+     * Cette méthode est appelée lorsqu’un agent est détecté comme inactif.
+     *
+     * @param agent l’agent concerné
+     */
+    public void handle(AgentView agent) {
+        // Récupération de la politique de supervision définie pour cet agent
+        SupervisionPolicy policy = agent.policy(); // Assure-toi que le getter existe
+        String agentId = agent.id(); // Identifiant unique de l’agent
+
+        // Application de la bonne action selon la politique
+        switch (policy) {
+            case RESTART -> {
+                // Politique : redémarrer l’agent (ici on le détruit d’abord)
+                System.out.println("🔁 Supervision : redémarrage de l’agent " + agentId);
+                controlService.destroy(agentId);
+                // Pour redémarrer, tu pourrais ici relancer un agent avec les mêmes paramètres
+            }
+            case STOP -> {
+                // Politique : arrêt définitif de l’agent
+                System.out.println("⛔ Supervision : arrêt de l’agent " + agentId);
+                controlService.destroy(agentId);
+            }
+            case QUARANTINE -> {
+                // Politique : mettre l’agent de côté sans le supprimer
+                System.out.println("🟡 Supervision : quarantaine de l’agent " + agentId);
+                // Ici, tu pourrais marquer son statut comme QUARANTINED dans le registre
+                // ou l'exclure temporairement des traitements
+            }
+            case RESUME -> {
+                // Politique : ne rien faire (ignorer l’erreur)
+                System.out.println("✅ Supervision : erreur ignorée pour l’agent " + agentId);
+            }
+        }
+    }
+}
