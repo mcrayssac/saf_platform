@@ -210,6 +210,68 @@ SAF_PLATFORM/
   * Ports out : **broker** (événements, réponses).
   * Web : `GET /health`, `GET /metrics` (interne).
 
+### Sécurité (clé API)
+
+Les endpoints de **SAF-Control** sont protégés par une **clé API** simple, vérifiée via un filtre Spring (`ApiKeyFilter`).
+
+#### Configuration
+
+La clé est définie dans `application.properties` :
+
+```properties
+saf.security.api-key=cle-api
+```
+
+#### En-tête attendu
+
+Chaque requête doit inclure l’en-tête HTTP suivant : 
+
+```text
+X-API-KEY: cle-api
+```
+
+#### Exemple de test (PowerShell)
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8080/agents -Headers @{ "X-API-KEY" = "cle-api" }
+```
+
+#### Exemple de test (cURL)
+
+```bash
+curl -H "X-API-KEY: cle-api" http://localhost:8080/agents
+```
+
+#### Exemple côté front (fetch)
+
+Lorsque le front communique avec le backend, il doit inclure la clé dans les en-têtes HTTP : 
+
+```javascript
+fetch("http://localhost:8080/agents", {
+  method: "GET",
+  headers: {
+    "Content-Type": "application/json",
+    "X-API-KEY": "cle-api"
+  }
+})
+  .then(response => {
+    if (!response.ok) throw new Error("Unauthorized");
+    return response.json();
+  })
+  .then(data => console.log(data))
+  .catch(error => console.error(error));
+```
+
+#### Option pour le développement
+
+Pour simplifier les tests locaux, la vérification peut être désactivée en laissant la clé vide :
+
+```properties
+saf.security.api-key=
+```
+
+Dans ce cas, le filtre accepte toutes les requêtes sans contrôle.
+
 ### Contrats API (brouillon)
 
 > **Scope minimal** pour amorcer l’UI ; les schémas exacts seront figés via Swagger/OpenAPI plus tard.
