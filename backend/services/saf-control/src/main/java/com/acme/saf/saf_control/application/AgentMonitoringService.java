@@ -14,13 +14,14 @@ import java.util.stream.Collectors;
 
 @Service
 public class AgentMonitoringService {
-    
+    private final SupervisionService supervisionService;
     private final ControlService controlService;
     private final Map<String, Instant> heartbeats = new ConcurrentHashMap<>();
     private final Duration heartbeatTimeout = Duration.ofSeconds(60);
 
-    public AgentMonitoringService(ControlService controlService) {
+    public AgentMonitoringService(ControlService controlService, SupervisionService supervisionService) {
         this.controlService = controlService;
+        this.supervisionService = supervisionService;
     }
 
     /**
@@ -104,17 +105,19 @@ public class AgentMonitoringService {
     private AgentView enrichWithStatus(AgentView agent) {
         Instant lastHb = heartbeats.getOrDefault(agent.id(), null);
         AgentStatus status = determineStatus(lastHb);
-        
+
         return new AgentView(
-            agent.id(),
-            agent.type(),
-            agent.state(),
-            agent.runtimeNode(),
-            agent.host(),
-            agent.port(),
-            status,
-            lastHb != null ? lastHb : agent.lastHeartbeat()
+                agent.id(),
+                agent.type(),
+                agent.state(),
+                agent.runtimeNode(),
+                agent.host(),
+                agent.port(),
+                status,
+                lastHb != null ? lastHb : agent.lastHeartbeat(),
+                agent.policy()
         );
+
     }
 
     /**
