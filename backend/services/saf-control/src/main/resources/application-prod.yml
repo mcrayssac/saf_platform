@@ -1,10 +1,23 @@
 server:
   port: ${PORT:8080}
+
 spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP}
+
 management:
   endpoints:
     web.exposure.include: health,metrics,prometheus
   endpoint:
     health.show-details: when_authorized
+
+logging:
+  level:
+    root: INFO
+    com.acme.saf.saf_control: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+
+saf:
+  security:
+    api-key: ${SAF_SECURITY_API_KEY:test}

@@ -22,6 +22,15 @@ springdoc:
   swagger-ui.path: /swagger # UI: http://localhost:8080/swagger
   api-docs.path: /v3/api-docs
 
+logging:
+  level:
+    root: INFO
+    com.acme.saf.saf_control: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
 saf:
   security:
     api-key: mock-secret
