@@ -35,7 +35,6 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
-    environment:
     networks:
       - saf-network
     healthcheck:
