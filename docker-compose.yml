@@ -36,8 +36,6 @@ services:
     ports:
       - "80:80"
     environment:
-      # Backend API URL (used by nginx proxy)
-      BACKEND_URL: http://backend:8080
     networks:
       - saf-network
     healthcheck:
