@@ -49,7 +49,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
 
         String apiKey = request.getHeader(HEADER_NAME);
         log.debug("ApiKeyFilter invoked for path: {}", request.getRequestURI());
-        log.debug("Received API key: {}, Expected API key: {}", apiKey, validApiKey);
+        log.debug("Validating API key for request");
 
         if (validApiKey.equals(apiKey)) {
             log.debug("API key validation successful, setting authentication");
