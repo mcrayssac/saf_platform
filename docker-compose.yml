@@ -1,0 +1,52 @@
+services:
+  # Backend service
+  backend:
+    build:
+      context: ./backend/services/saf-control
+      dockerfile: Dockerfile
+    container_name: saf-backend
+    ports:
+      - "8080:8080"
+    environment:
+      # Spring profiles
+      SPRING_PROFILES_ACTIVE: prod
+      # Security
+      SAF_SECURITY_API_KEY: ${API_KEY:-your-secret-api-key-here}
+      # JVM options
+      JAVA_OPTS: -Xmx512m -Xms256m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: saf-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    environment:
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  saf-network:
+    driver: bridge
+    name: saf-network
