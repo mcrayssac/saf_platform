@@ -6,8 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install dependencies
-RUN rm -rf node_modules package-lock.json && \
-    npm install && \
+RUN npm ci && \
     npm rebuild && \
     npm install @rollup/rollup-linux-arm64-gnu \
                 lightningcss-linux-arm64-gnu \
