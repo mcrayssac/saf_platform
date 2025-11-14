@@ -20,4 +20,4 @@ logging:
 
 saf:
   security:
-    api-key: ${SAF_SECURITY_API_KEY:test}
+    api-key: ${SAF_SECURITY_API_KEY}
