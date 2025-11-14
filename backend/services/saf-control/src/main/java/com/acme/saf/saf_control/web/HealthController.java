@@ -18,7 +18,6 @@ public class HealthController {
 
     @GetMapping("/health")
     @Operation(summary = "Health check", description = "Returns the health status of the service")
-    @SecurityRequirement(name = "X-API-KEY")
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "UP");
