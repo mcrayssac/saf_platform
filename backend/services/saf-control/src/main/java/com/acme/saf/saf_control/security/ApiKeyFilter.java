@@ -62,6 +62,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         } else {
             log.warn("API key validation failed for path: {}", request.getRequestURI());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("text/plain");
             response.getWriter().write("Unauthorized");
         }
     }
