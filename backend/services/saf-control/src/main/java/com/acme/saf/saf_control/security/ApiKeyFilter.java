@@ -50,6 +50,12 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         String apiKey = request.getHeader(HEADER_NAME);
         log.debug("ApiKeyFilter invoked for path: {}", request.getRequestURI());
         log.debug("Validating API key for request");
+        
+        if (validApiKey == null || validApiKey.isBlank()) {
+            log.warn("No API key configured. Skipping API key validation for all endpoints.");
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         if (validApiKey.equals(apiKey)) {
             log.debug("API key validation successful, setting authentication");

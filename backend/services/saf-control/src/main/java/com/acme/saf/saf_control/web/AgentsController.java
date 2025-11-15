@@ -28,6 +28,27 @@ public class AgentsController {
     public ResponseEntity<AgentView> get(@PathVariable String id) {
         return service.get(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
+    
+    @GetMapping("/all")
+    @Operation (summary = "Get all agents")
+    public ResponseEntity<Collection<AgentView>> getAll() {
+        Collection<AgentView> agents = service.getAllAgents();
+        return ResponseEntity.ok(agents);
+    }
+    
+    @GetMapping("/host/{host}")
+    @Operation(summary = "Get agents by host")
+    public ResponseEntity<Collection<AgentView>> getByHost(@PathVariable String host) {
+        Collection<AgentView> agents = service.getAgentsByHost(host);
+        return ResponseEntity.ok(agents);
+    }
+
+    @GetMapping("/status/{status}")
+    @Operation(summary = "Get agents by status")
+    public ResponseEntity<Collection<AgentView>> getByStatus(@PathVariable String status) {
+        Collection<AgentView> agents = service.getAgentsByStatus(status);
+        return ResponseEntity.ok(agents);
+    }
 
     @PostMapping
     @Operation(summary = "Spawn a new agent (mock)")
