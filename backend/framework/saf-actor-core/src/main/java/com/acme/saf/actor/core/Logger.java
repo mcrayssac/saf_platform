@@ -1,4 +1,4 @@
-package com.acme.saf.saf_control.domain.actors.core.logging;
+package com.acme.saf.actor.core;
 
 public interface Logger {
     void info(String msg);

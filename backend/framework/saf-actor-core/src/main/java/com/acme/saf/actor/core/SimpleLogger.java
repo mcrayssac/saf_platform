@@ -1,4 +1,4 @@
-package com.acme.saf.saf_control.domain.actors.core.logging;
+package com.acme.saf.actor.core;
 
 public class SimpleLogger implements Logger {
     private final String actorName;

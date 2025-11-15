@@ -1,4 +1,4 @@
-package com.acme.saf.saf_control.domain.actors.core.context;
+package com.acme.saf.actor.core;
 
 public interface ActorContext {
     void logInfo(String message);

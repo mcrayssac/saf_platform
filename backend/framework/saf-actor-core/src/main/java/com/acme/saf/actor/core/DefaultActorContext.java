@@ -1,6 +1,6 @@
-package com.acme.saf.saf_control.domain.actors.core.context;
+package com.acme.saf.actor.core;
 
-import com.acme.saf.saf_control.domain.actors.core.logging.Logger;
+import com.acme.saf.actor.core.Logger;
 
 public class DefaultActorContext implements ActorContext {
 
