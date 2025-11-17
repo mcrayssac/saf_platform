@@ -37,14 +37,15 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-
         String apiKey = request.getHeader(HEADER_NAME);
 
+        // Comparer la clé reçue avec la clé valide
         if (validApiKey.equals(apiKey)) {
             filterChain.doFilter(request, response);
         } else {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("Unauthorized");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);  // Retourner 403 Forbidden
+            response.getWriter().write("Forbidden");
         }
     }
+
 }

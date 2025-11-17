@@ -116,3 +116,9 @@ temp/
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
+/.metadata/
+
+# Eclipse / Spring Tool Suite
+.project
+.classpath
+.settings/
