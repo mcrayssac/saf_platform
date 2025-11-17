@@ -1,10 +1,10 @@
 package com.acme.saf.saf_control.application;
 
+import com.acme.saf.saf_control.domain.dto.AgentCreateRequest;
 import com.acme.saf.saf_control.domain.dto.AgentStatus;
 import com.acme.saf.saf_control.domain.dto.AgentView;
 import com.acme.saf.saf_control.domain.dto.Agent.SupervisionPolicy;
 import org.springframework.stereotype.Service;
-
 
 @Service
 public class SupervisionService {
@@ -16,49 +16,43 @@ public class SupervisionService {
     }
 
     /**
+     * Redémarre complètement un agent :
+     * 1. destruction de l'acteur existant
+     * 2. re-création d'un nouvel acteur du même type et même état
+     */
+    public void restart(AgentView agent) {
+        // 1. Destroy
+        controlService.destroy(agent.id());
+        // 2. Respawn
+        controlService.spawn(new AgentCreateRequest(agent.type()));
+    }
+
+    /**
+     * Politique RESUME : l'erreur est ignorée,
+     * l'acteur reste dans son état actuel, aucune action corrective.
+     */
+    public void resume(AgentView agent) {
+        System.out.println("Resuming agent " + agent.id());
+    }
+
+    /**
+     * Politique STOP : l'acteur est arrêté définitivement
+     * (détruit sans recréation)
+     */
+    public void stop(AgentView agent) {
+        // Immobiliser totalement
+        controlService.destroy(agent.id());
+    }
+
+    /**
      * Applique la politique de supervision à un agent inactif
+     * (appelée lorsqu'un agent est en échec, expiré, ou en quarantaine)
      */
     public void handle(AgentView agent) {
-        SupervisionPolicy policy = agent.policy();
-
-        if (policy == null) {
-            System.out.println("⚠️ Aucune politique définie pour l'agent " + agent.id());
-            return;
-        }
-
-        switch (policy) {
-            case RESTART -> {
-                System.out.println("🔁 Politique: RESTART → redémarrage de l'agent " + agent.id());
-                controlService.destroy(agent.id());
-                // En vrai projet : re-spawn avec les mêmes paramètres (à implémenter)
-            }
-
-            case STOP -> {
-                System.out.println("⛔ Politique: STOP → arrêt de l'agent " + agent.id());
-                controlService.destroy(agent.id());
-            }
-
-            case QUARANTINE -> {
-                System.out.println("🧪 Politique: QUARANTINE → mise en quarantaine de l'agent " + agent.id());
-                // À adapter : ici on ne détruit pas, on pourrait stocker l'agent ailleurs
-                AgentView quarantined = new AgentView(
-                        agent.id(),
-                        agent.type(),
-                        "quarantined",
-                        agent.runtimeNode(),
-                        agent.host(),
-                        agent.port(),
-                        AgentStatus.QUARANTINED,
-                        agent.lastHeartbeat(),
-                        agent.policy()
-                );
-
-                controlService.update(quarantined);
-            }
-
-            case RESUME -> {
-                System.out.println("🔄 Politique: RESUME → aucune action sur l'agent " + agent.id());
-            }
+        switch (agent.policy()) {
+            case RESTART -> restart(agent);
+            case RESUME  -> resume(agent);
+            case STOP    -> stop(agent);
         }
     }
 }

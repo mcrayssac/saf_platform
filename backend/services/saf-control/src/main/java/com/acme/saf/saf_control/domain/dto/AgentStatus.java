@@ -4,5 +4,5 @@ public enum AgentStatus {
     ACTIVE,
     INACTIVE,
     UNKNOWN,
-    QUARANTINED
+    QUARANTINE
 }

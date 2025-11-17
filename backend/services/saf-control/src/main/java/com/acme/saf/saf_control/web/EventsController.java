@@ -19,4 +19,6 @@ public class EventsController {
     public SseEmitter stream() {
         return events.subscribe();
     }
+
+
 }

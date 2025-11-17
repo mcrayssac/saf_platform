@@ -16,13 +16,38 @@ public record AgentView(
         SupervisionPolicy policy
 ) {
     // Constructeur de compatibilité
-    public AgentView(String id, String type, String state, String runtimeNode) {
-        this(id, type, state, runtimeNode, "unknown", 0, AgentStatus.UNKNOWN, Instant.now(), SupervisionPolicy.RESUME);
+    public AgentView(String id, String type, String state, String runtimeNode){
+        this(
+                id,
+                type,
+                state,
+                runtimeNode,
+                "unknown",
+                0,
+                AgentStatus.INACTIVE,      // ← par défaut : INACTIVE
+                null,                      // ← aucun heartbeat
+                SupervisionPolicy.RESUME
+        );
+    }
+
+    // Constructeur utilisé pour les cas comme la mise en quarantaine
+    public AgentView(String id, String type, String state, String runtimeNode, String host, int port, AgentStatus status, Instant lastHeartbeat) {
+        this(id, type, state, runtimeNode, host, port, status, lastHeartbeat, SupervisionPolicy.RESUME);
     }
 
     // Constructeur avec localisation réseau
     public AgentView(String id, String type, String state, String runtimeNode, String host, int port) {
-        this(id, type, state, runtimeNode, host, port, AgentStatus.ACTIVE, Instant.now(), SupervisionPolicy.RESUME);
+        this(
+                id,
+                type,
+                state,
+                runtimeNode,
+                host,
+                port,
+                AgentStatus.INACTIVE,   // ← toujours INACTIVE tant qu’aucun heartbeat n’est reçu
+                null,                   // ← pas de heartbeat connu
+                SupervisionPolicy.RESUME
+        );
     }
 
     // Constructeur complet utilisé pour les mises à jour

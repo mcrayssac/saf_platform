@@ -16,13 +16,13 @@ import java.util.Collection;
 @RequestMapping("/agents")
 @Tag(name = "Agents")
 public class AgentsController {
-    
+
     private final ControlService service;
     private final AgentMonitoringService monitoringService;
 
     public AgentsController(
-        ControlService service,
-        AgentMonitoringService monitoringService
+            ControlService service,
+            AgentMonitoringService monitoringService
     ) {
         this.service = service;
         this.monitoringService = monitoringService;
@@ -33,7 +33,6 @@ public class AgentsController {
     @GetMapping
     @Operation(summary = "List all agents with their health status")
     public Collection<AgentView> list() {
-        // MODIFICATION : Utilise le monitoring pour enrichir avec le statut
         return monitoringService.getAllAgentsWithStatus();
     }
 
@@ -41,14 +40,15 @@ public class AgentsController {
     @Operation(summary = "Get one agent details")
     public ResponseEntity<AgentView> get(@PathVariable String id) {
         return service.get(id)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+                .map(a -> ResponseEntity.ok(monitoringService.buildAgentView(id)))
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     @Operation(summary = "Spawn a new agent")
     public ResponseEntity<AgentView> create(@Valid @RequestBody AgentCreateRequest req) {
-        AgentView view = service.spawn(req);
+        AgentView created = service.spawn(req);
+        AgentView view = monitoringService.buildAgentView(created.id());
         return ResponseEntity.created(URI.create("/agents/" + view.id())).body(view);
     }
 
@@ -62,10 +62,20 @@ public class AgentsController {
     @PostMapping("/{id}/message")
     @Operation(summary = "Send a message to an agent")
     public ResponseEntity<MessageAck> send(
-        @PathVariable String id, 
-        @RequestBody MessageRequest req
+            @PathVariable String id,
+            @RequestBody MessageRequest req
     ) {
         return ResponseEntity.accepted().body(service.sendMessage(id, req));
+    }
+
+    @PostMapping("/{id}/heartbeat")
+    @Operation(summary = "Record a heartbeat signal from an agent")
+    public ResponseEntity<Void> heartbeat(@PathVariable String id) {
+        if (service.get(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        monitoringService.recordHeartbeat(id);
+        return ResponseEntity.ok().build();
     }
 
     // ========== NOUVEAUX ENDPOINTS MONITORING ==========
@@ -82,21 +92,15 @@ public class AgentsController {
         return monitoringService.getAgentsByType(type);
     }
 
+    @GetMapping("/status")
+    @Operation(summary = "List all agents with their health status (status endpoint)")
+    public Collection<AgentView> getAllAgentsWithStatus() {
+        return monitoringService.getAllAgentsWithStatus();
+    }
+
     @GetMapping("/statistics")
     @Operation(summary = "Get global agent statistics")
     public AgentStatistics getStatistics() {
         return monitoringService.getStatistics();
-    }
-
-    @PostMapping("/{id}/heartbeat")
-    @Operation(summary = "Record a heartbeat signal from an agent")
-    public ResponseEntity<Void> heartbeat(@PathVariable String id) {
-        // Vérifie que l'agent existe
-        if (service.get(id).isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        
-        monitoringService.recordHeartbeat(id);
-        return ResponseEntity.ok().build();
     }
 }
