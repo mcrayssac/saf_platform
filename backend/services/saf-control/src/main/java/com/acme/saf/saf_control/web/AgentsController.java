@@ -3,6 +3,7 @@ package com.acme.saf.saf_control.web;
 import com.acme.saf.saf_control.application.ControlService;
 import com.acme.saf.saf_control.domain.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import java.util.Collection;
 @RestController
 @RequestMapping("/agents")
 @Tag(name = "Agents")
+@SecurityRequirement(name = "X-API-KEY")
 public class AgentsController {
     private final ControlService service;
 
