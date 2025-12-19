@@ -3,6 +3,7 @@ package com.acme.saf.saf_control.web;
 import com.acme.saf.saf_control.application.ControlService;
 import com.acme.saf.saf_control.domain.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import java.util.Collection;
 @RestController
 @RequestMapping("/agents")
 @Tag(name = "Agents")
+@SecurityRequirement(name = "X-API-KEY")
 public class AgentsController {
     private final ControlService service;
 
@@ -36,6 +38,27 @@ public class AgentsController {
         
         // Si l'agent existe, renvoyer l'agent avec un code 200 OK
         return ResponseEntity.ok(agent);
+    }
+    
+    @GetMapping("/all")
+    @Operation (summary = "Get all agents")
+    public ResponseEntity<Collection<AgentView>> getAll() {
+        Collection<AgentView> agents = service.getAllAgents();
+        return ResponseEntity.ok(agents);
+    }
+    
+    @GetMapping("/host/{host}")
+    @Operation(summary = "Get agents by host")
+    public ResponseEntity<Collection<AgentView>> getByHost(@PathVariable String host) {
+        Collection<AgentView> agents = service.getAgentsByHost(host);
+        return ResponseEntity.ok(agents);
+    }
+
+    @GetMapping("/status/{status}")
+    @Operation(summary = "Get agents by status")
+    public ResponseEntity<Collection<AgentView>> getByStatus(@PathVariable String status) {
+        Collection<AgentView> agents = service.getAgentsByStatus(status);
+        return ResponseEntity.ok(agents);
     }
 
 

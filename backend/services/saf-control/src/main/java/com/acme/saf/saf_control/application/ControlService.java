@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 public class ControlService {
@@ -34,17 +35,18 @@ public class ControlService {
     }
 
     public AgentView create(AgentCreateRequest req) {
-        String id = UUID.randomUUID().toString();
-        AgentView agent = new AgentView(
-                id,
-                req.type(),
-                "running",
-                "runtime-mock-1" // pour l’instant, tout le monde sur le même Runtime
-        );
-        registry.put(id, agent);
+        String id = UUID.randomUUID().toString();        
+        String host = req.host() != null ? req.host() : "localhost";
+        int port = req.port() != 0 ? req.port() : 8080;        
 
-        events.publish("AgentCreated", agent);
-        return agent;
+        AgentView view = new AgentView(id, req.type(), "starting", "runtime-mock-1", port, host);
+        registry.put(id, view);
+        events.publish("ActorStarted", view);
+        // simulate that it's quickly "running"
+        AgentView running = new AgentView(id, req.type(), "running", "runtime-mock-1", port, host);
+        registry.put(id, running);
+        events.publish("ActorRunning", running);
+        return running;
     }
 
     public void destroy(String id) {
@@ -54,7 +56,32 @@ public class ControlService {
         }
     }
 
-    // Routage de message vers le Runtime
+    /**
+     * Get all agents
+     */
+    public Collection<AgentView> getAllAgents() {
+        return registry.values();
+    }
+
+    public Collection<AgentView> getAgentsByHost(String host) {
+        if (host == null || host.isBlank()) {
+            return Collections.emptyList();
+        }
+        return registry.values().stream()
+                .filter(agent -> host.equalsIgnoreCase(agent.host()))
+                .collect(Collectors.toList());
+    }
+    
+    public Collection<AgentView> getAgentsByStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        return registry.values().stream()
+                .filter(agent -> agent.status().equalsIgnoreCase(status))
+                .collect(Collectors.toList());
+    }
+
     public MessageAck sendMessage(String id, MessageRequest msg) {
         // 1) Vérifier que l’agent existe
         AgentView agent = registry.get(id);

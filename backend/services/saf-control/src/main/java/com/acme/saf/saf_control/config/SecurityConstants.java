@@ -9,6 +9,7 @@ public class SecurityConstants {
         "/swagger-ui/**",
         "/swagger-ui.html",
         "/agents/**"
+        "/api/health"
     };
     
     private SecurityConstants() {

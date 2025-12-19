@@ -22,6 +22,7 @@ springdoc:
   swagger-ui.path: /swagger # UI: http://localhost:8080/swagger
   api-docs.path: /v3/api-docs
 
+
 saf:
   security:
     api-key: mock-secret
