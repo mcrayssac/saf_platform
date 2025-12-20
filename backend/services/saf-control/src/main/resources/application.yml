@@ -22,6 +22,10 @@ springdoc:
   swagger-ui.path: /swagger # UI: http://localhost:8080/swagger
   api-docs.path: /v3/api-docs
 
+agent:
+  heartbeat:
+    timeout: 60s
+    check-interval: 30s
 
 saf:
   security:

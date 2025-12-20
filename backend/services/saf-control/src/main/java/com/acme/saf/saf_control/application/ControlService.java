@@ -1,5 +1,6 @@
 package com.acme.saf.saf_control.application;
 
+import com.acme.saf.saf_control.domain.dto.AgentStatus;
 import com.acme.saf.saf_control.domain.dto.*;
 import com.acme.saf.saf_control.infrastructure.events.EventBus;
 import com.acme.saf.saf_control.infrastructure.routing.RuntimeGateway;
@@ -9,14 +10,22 @@ import jakarta.annotation.PostConstruct;
 
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
 public class ControlService {
-
+    /**
+     * Registre central de tous les agents.
+     * Clé = ID de l'agent, Valeur = AgentView (vue sur l'agent)
+     */
     private final Map<String, AgentView> registry = new ConcurrentHashMap<>();
+
+    /**
+     * Bus d'événements pour notifier les autres services des changements.
+     */
     private final EventBus events;
     private final RuntimeGateway runtimeGateway;
 
@@ -25,34 +34,82 @@ public class ControlService {
         this.runtimeGateway = runtimeGateway;
     }
 
-    // MOCK registry pour les agents
-    public Collection<AgentView> list() {
-        return registry.values();
+    /**
+     * Liste tous les agents enregistrés.
+     */
+    public Collection<AgentView> list() { return registry.values(); }
+
+    /**
+     * Récupère un agent par son ID.
+     */
+    public Optional<AgentView> get(String id) {
+        return Optional.ofNullable(registry.get(id));
     }
 
-    public AgentView get(String id) {
-        return registry.get(id);  // Retourne null si l'agent n'existe pas
-    }
+    /**
+     * Crée et lance un nouvel agent.
+     * @param req Requête de création avec type, localisation et politique
+     * @return L'agent créé en état "running"
+     */
+    public AgentView spawn(AgentCreateRequest req) {
+        String id = UUID.randomUUID().toString();
 
-    public AgentView create(AgentCreateRequest req) {
-        String id = UUID.randomUUID().toString();        
+        // Extraction des paramètres avec valeurs par défaut
         String host = req.host() != null ? req.host() : "localhost";
-        int port = req.port() != 0 ? req.port() : 8080;        
+        int port = req.port() != 0 ? req.port() : 8080;
 
-        AgentView view = new AgentView(id, req.type(), "starting", "runtime-mock-1", port, host);
-        registry.put(id, view);
-        events.publish("ActorStarted", view);
-        // simulate that it's quickly "running"
-        AgentView running = new AgentView(id, req.type(), "running", "runtime-mock-1", port, host);
+        // On utilise la policy de la requête
+        var policy = req.policy() != null ? req.policy() : Agent.SupervisionPolicy.RESTART;
+
+        // Phase 1 : Agent en démarrage
+        AgentView starting = new AgentView(
+                id,
+                req.type(),
+                "starting",
+                "runtime-mock-1",
+                host,
+                port,
+                AgentStatus.INACTIVE,
+                null,
+                policy
+        );
+        registry.put(id, starting);
+        events.publish("ActorStarted", starting);
+
+        // Phase 2 : Simulation de la transition vers "running"
+        // (En production, cet événement viendrait du Runtime)
+        AgentView running = new AgentView(
+                id,
+                req.type(),
+                "running",
+                "runtime-mock-1",
+                host,
+                port,
+                AgentStatus.ACTIVE,
+                Instant.now(),
+                policy
+        );
         registry.put(id, running);
         events.publish("ActorRunning", running);
+
         return running;
     }
 
+    /**
+     * Met à jour un agent dans le registre.
+     * Utilisé notamment pour mettre à jour le statut ou le heartbeat.
+     */
+    public void update(AgentView updated) {
+        registry.put(updated.id(), updated);
+    }
+
+    /**
+     * Détruit un agent (arrêt et suppression du registre).
+     */
     public void destroy(String id) {
         AgentView removed = registry.remove(id);
         if (removed != null) {
-            events.publish("AgentDestroyed", Map.of("id", id));
+            events.publish("ActorStopped", removed);
         }
     }
 
@@ -82,6 +139,12 @@ public class ControlService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Envoie un message à un agent.
+     * @param id ID de l'agent destinataire
+     * @param msg Requête de message (mode, payload, timeout)
+     * @return Accusé de réception avec ID de corrélation
+     */
     public MessageAck sendMessage(String id, MessageRequest msg) {
         // 1) Vérifier que l’agent existe
         AgentView agent = registry.get(id);
@@ -131,5 +194,4 @@ public class ControlService {
         System.out.println("Agents in registry:");
         registry.forEach((id, agent) -> System.out.println("ID: " + id + ", Agent: " + agent));
     }
-
 }
