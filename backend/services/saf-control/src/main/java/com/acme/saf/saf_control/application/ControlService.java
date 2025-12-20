@@ -22,16 +22,12 @@ public class ControlService {
      */
     private final EventBus events;
 
-    public ControlService(EventBus events) {
-        this.events = events;
-    }
+    public ControlService(EventBus events) { this.events = events; }
 
     /**
      * Liste tous les agents enregistrés.
      */
-    public Collection<AgentView> list() {
-        return registry.values();
-    }
+    public Collection<AgentView> list() { return registry.values(); }
 
     /**
      * Récupère un agent par son ID.
@@ -104,7 +100,6 @@ public class ControlService {
         AgentView removed = registry.remove(id);
         if (removed != null) {
             events.publish("ActorStopped", removed);
-            System.out.println("🗑️ Agent " + id + " détruit");
         }
     }
 

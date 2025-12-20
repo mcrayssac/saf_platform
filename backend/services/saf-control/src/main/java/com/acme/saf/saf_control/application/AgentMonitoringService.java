@@ -24,7 +24,6 @@ public class AgentMonitoringService {
 
     /**
      * Registre des derniers heartbeats reçus par agent.
-     * Clé = ID de l'agent, Valeur = instant du dernier heartbeat
      */
     private final Map<String, Instant> heartbeats = new ConcurrentHashMap<>();
 
@@ -58,10 +57,6 @@ public class AgentMonitoringService {
      */
     public void recordHeartbeat(String agentId) {
         heartbeats.put(agentId, Instant.now());
-
-        // ⚠️ CORRECTION : On ne fait PLUS quarantine.remove(agentId)
-        // Car on ne veut pas qu'un agent sorte automatiquement de quarantaine
-        // juste parce qu'il envoie un heartbeat
     }
 
     /**
@@ -73,7 +68,7 @@ public class AgentMonitoringService {
     public void releaseFromQuarantine(String agentId) {
         boolean removed = quarantine.remove(agentId);
         if (removed) {
-            System.out.println("✅ Agent " + agentId + " sorti de quarantaine manuellement");
+            System.out.println("Agent " + agentId + " sorti de quarantaine manuellement");
         }
     }
 
@@ -133,13 +128,6 @@ public class AgentMonitoringService {
 
     /**
      * Vérifie périodiquement la santé des agents (toutes les 30 secondes).
-     *
-     * PROCESSUS :
-     * 1. Nettoie les heartbeats des agents supprimés
-     * 2. Pour chaque agent NON en quarantaine :
-     *    - Vérifie si son heartbeat est périmé (> 60 sec)
-     *    - Si oui : applique la politique de supervision
-     *    - Puis met l'agent en quarantaine pour éviter les boucles
      */
     @Scheduled(fixedRate = 30000)
     public void checkAgentHealth() {
@@ -177,12 +165,6 @@ public class AgentMonitoringService {
 
     /**
      * Traite les événements remontés par le Runtime (moteur d'exécution des agents).
-     *
-     * ÉVÉNEMENTS GÉRÉS :
-     * - ActorStarted : l'agent démarre → on enregistre un heartbeat initial
-     * - ActorStopped : l'agent s'arrête proprement → mise en quarantaine
-     * - ActorFailed : l'agent a planté → supervision + quarantaine
-     *
      * @param event Événement provenant du Runtime
      */
     public void processEvent(RuntimeEvent event) {
@@ -201,7 +183,7 @@ public class AgentMonitoringService {
             }
 
             case "ActorFailed" -> {
-                // ✅ CORRECTION : Ordre d'exécution modifié
+                // CORRECTION : Ordre d'exécution modifié
                 // 1. D'abord on applique la politique de supervision
                 supervisionService.handle(
                         controlService.get(event.agentId())
@@ -298,7 +280,7 @@ public class AgentMonitoringService {
                 agent.port(),
                 status,
                 lastHb,
-                agent.policy()  // ✅ On garde la politique de l'agent
+                agent.policy()
         );
     }
 }
