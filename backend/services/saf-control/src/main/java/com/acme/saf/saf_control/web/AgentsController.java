@@ -28,7 +28,16 @@ public class AgentsController {
     @GetMapping("/{id}")
     @Operation(summary = "Get one agent (mock)")
     public ResponseEntity<AgentView> get(@PathVariable String id) {
-        return service.get(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+        // Vérifier si l'agent existe dans le registre
+        AgentView agent = service.get(id);
+        
+        // Si l'agent est null ou n'existe pas, renvoyer une réponse 404
+        if (agent == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        // Si l'agent existe, renvoyer l'agent avec un code 200 OK
+        return ResponseEntity.ok(agent);
     }
     
     @GetMapping("/all")
@@ -52,10 +61,11 @@ public class AgentsController {
         return ResponseEntity.ok(agents);
     }
 
+
     @PostMapping
     @Operation(summary = "Spawn a new agent (mock)")
     public ResponseEntity<AgentView> create(@Valid @RequestBody AgentCreateRequest req) {
-        AgentView view = service.spawn(req);
+        AgentView view = service.create(req);  // Remplacer spawn par create
         return ResponseEntity.created(URI.create("/agents/" + view.id())).body(view);
     }
 

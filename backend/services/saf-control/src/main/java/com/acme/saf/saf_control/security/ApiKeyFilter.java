@@ -46,7 +46,6 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-
         String apiKey = request.getHeader(HEADER_NAME);
         log.debug("ApiKeyFilter invoked for path: {}", request.getRequestURI());
         log.debug("Validating API key for request");
@@ -57,6 +56,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Comparer la clé reçue avec la clé valide
         if (validApiKey.equals(apiKey)) {
             log.debug("API key validation successful, setting authentication");
             // Create authentication token and set it in SecurityContext
@@ -66,10 +66,9 @@ public class ApiKeyFilter extends OncePerRequestFilter {
             log.debug("Authentication set in SecurityContext");
             filterChain.doFilter(request, response);
         } else {
-            log.warn("API key validation failed for path: {}", request.getRequestURI());
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("text/plain");
-            response.getWriter().write("Unauthorized");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);  // Retourner 403 Forbidden
+            response.getWriter().write("Forbidden");
         }
     }
+
 }
