@@ -34,9 +34,12 @@ docker-compose up -d
 
 This command will:
 - Build the backend Docker image (Spring Boot with Java 21)
+- Build the runtime Docker image (Spring Boot with Java 21)
 - Build the frontend Docker image (React with Nginx)
 - Start the backend service
+- Start the runtime service
 - Start the frontend service
+- Start Prometheus for metrics scraping
 
 ### 3. Verify Services
 
@@ -52,8 +55,11 @@ All services should show as "healthy" after initialization.
 
 - **Frontend**: http://localhost
 - **Backend API**: http://localhost:8080
+- **Runtime API**: http://localhost:8081
 - **Swagger UI**: http://localhost:8080/swagger
 - **Health Check**: http://localhost:8080/actuator/health
+- **Runtime Health Check**: http://localhost:8081/actuator/health
+- **Prometheus UI**: http://localhost:9090
 
 ## Service Architecture
 
@@ -73,6 +79,17 @@ All services should show as "healthy" after initialization.
 ┌─────────────────┐
 │     Backend     │  (Port 8080)
 │  (Spring Boot)  │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│     Runtime     │  (Port 8081)
+│  (Spring Boot)  │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Prometheus    │  (Port 9090)
 └─────────────────┘
 ```
 
@@ -150,6 +167,17 @@ docker-compose up -d --build
 - **Environment Variables**:
   - `SPRING_PROFILES_ACTIVE`: Spring profile (default: prod)
   - `SAF_SECURITY_API_KEY`: API key for authentication
+  - `JAVA_OPTS`: JVM options (default: -Xmx512m -Xms256m)
+
+### Runtime (Spring Boot)
+
+- **Container**: `saf-runtime`
+- **Port**: 8081
+- **Build time**: ~2-3 minutes (first build with dependency download)
+- **Startup time**: ~30-60 seconds
+- **Health Check**: `/actuator/health`
+- **Environment Variables**:
+  - `SPRING_PROFILES_ACTIVE`: Spring profile (default: prod)
   - `JAVA_OPTS`: JVM options (default: -Xmx512m -Xms256m)
 
 ### Frontend (React + Nginx)
@@ -268,6 +296,9 @@ Check service health:
 # Backend health
 curl http://localhost:8080/actuator/health
 
+# Runtime health
+curl http://localhost:8081/actuator/health
+
 # Frontend (returns 200 if healthy)
 curl -I http://localhost/
 
@@ -278,7 +309,10 @@ docker-compose ps
 ### Metrics
 
 Prometheus metrics available at:
-- http://localhost:8080/actuator/prometheus
+- http://localhost:8081/actuator/prometheus
+
+Prometheus UI (scraping saf-runtime):
+- http://localhost:9090
 
 ### Container Stats
 
