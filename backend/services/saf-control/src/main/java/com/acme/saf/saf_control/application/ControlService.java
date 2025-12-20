@@ -1,6 +1,5 @@
 package com.acme.saf.saf_control.application;
 
-import com.acme.saf.saf_control.domain.dto.AgentStatus;
 import com.acme.saf.saf_control.domain.dto.*;
 import com.acme.saf.saf_control.infrastructure.events.EventBus;
 import com.acme.saf.saf_control.infrastructure.routing.RuntimeGateway;
@@ -134,8 +133,15 @@ public class ControlService {
             return Collections.emptyList();
         }
 
+        AgentStatus desiredStatus;
+        try {
+            desiredStatus = AgentStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return Collections.emptyList();
+        }
+
         return registry.values().stream()
-                .filter(agent -> agent.status().equalsIgnoreCase(status))
+                .filter(agent -> agent.status() == desiredStatus)
                 .collect(Collectors.toList());
     }
 
@@ -158,7 +164,7 @@ public class ControlService {
         // 3) Construire l’enveloppe pour le Runtime
         RuntimeMessageEnvelope envelope = new RuntimeMessageEnvelope(
                 id,
-                agent.node(),        // Route vers le bon runtime
+                agent.runtimeNode(),        // Route vers le bon runtime
                 msg.mode(),
                 msg.payload(),
                 msg.timeoutMs(),
@@ -175,7 +181,7 @@ public class ControlService {
                 "payload", msg.payload(),
                 "timeoutMs", msg.timeoutMs(),
                 "correlationId", corr,
-                "node", agent.node()
+                "node", agent.runtimeNode()
         );
         events.publish("MessageDelivered", event);
 
