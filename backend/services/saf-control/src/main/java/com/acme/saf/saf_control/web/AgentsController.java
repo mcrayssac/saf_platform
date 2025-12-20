@@ -4,6 +4,7 @@ import com.acme.saf.saf_control.application.AgentMonitoringService;
 import com.acme.saf.saf_control.application.ControlService;
 import com.acme.saf.saf_control.domain.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ import java.util.Collection;
 @RestController
 @RequestMapping("/agents")
 @Tag(name = "Agents")
+@SecurityRequirement(name = "X-API-KEY")
 public class AgentsController {
 
     private final ControlService service;
@@ -40,9 +42,31 @@ public class AgentsController {
     @Operation(summary = "Get one agent details")
     public ResponseEntity<AgentView> get(@PathVariable String id) {
         return service.get(id)
-                .map(a -> ResponseEntity.ok(monitoringService.buildAgentView(id)))
-                .orElse(ResponseEntity.notFound().build());
+            .map(a -> ResponseEntity.ok(monitoringService.buildAgentView(id)))
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
+    
+    @GetMapping("/all")
+    @Operation (summary = "Get all agents")
+    public ResponseEntity<Collection<AgentView>> getAll() {
+        Collection<AgentView> agents = service.getAllAgents();
+        return ResponseEntity.ok(agents);
+    }
+    
+    @GetMapping("/host/{host}")
+    @Operation(summary = "Get agents by host")
+    public ResponseEntity<Collection<AgentView>> getByHost(@PathVariable String host) {
+        Collection<AgentView> agents = service.getAgentsByHost(host);
+        return ResponseEntity.ok(agents);
+    }
+
+    @GetMapping("/status/{status}")
+    @Operation(summary = "Get agents by status")
+    public ResponseEntity<Collection<AgentView>> getByStatus(@PathVariable String status) {
+        Collection<AgentView> agents = service.getAgentsByStatus(status);
+        return ResponseEntity.ok(agents);
+    }
+
 
     @PostMapping
     @Operation(summary = "Spawn a new agent", description = "Creates and starts a new agent with the specified type, location, and supervision policy")

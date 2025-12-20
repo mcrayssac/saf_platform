@@ -2,6 +2,8 @@
 
 > Plateforme d’**acteurs (agents)** distribuée construite avec **Spring Boot** (backend) et **React + Tailwind + shadcn/ui** (frontend).
 > Objectif : offrir un **plan de contrôle** (SAF-Control) et un **plan d’exécution** (SAF-Runtime) pour créer, superviser et faire communiquer des acteurs à l’échelle.
+>
+> Le framework est **autonome** : il peut être déployé tel quel comme plateforme générique, ou **embarqué** dans une application tierce qui vient brancher ses propres acteurs via un mécanisme de **plugin (ActorFactory)**, à la manière d’Akka.
 
 ---
 
@@ -11,6 +13,7 @@
   - [Sommaire](#sommaire)
   - [Vision](#vision)
   - [Architecture](#architecture)
+    - [SAF-Actor-Core (cœur du framework)](#saf-actor-core-cœur-du-framework)
     - [SAF-Control (plan de contrôle)](#saf-control-plan-de-contrôle)
     - [SAF-Runtime (plan d’exécution)](#saf-runtime-plan-dexécution)
     - [Flux type](#flux-type)
@@ -18,12 +21,21 @@
   - [Arborescence du repo](#arborescence-du-repo)
   - [Frontend](#frontend)
   - [Backend](#backend)
+    - [Sécurité (clé API)](#sécurité-clé-api)
+      - [Configuration](#configuration)
+      - [En-tête attendu](#en-tête-attendu)
+      - [Exemple de test (PowerShell)](#exemple-de-test-powershell)
+      - [Exemple de test (cURL)](#exemple-de-test-curl)
+      - [Exemple côté front (fetch)](#exemple-côté-front-fetch)
+      - [Option pour le développement](#option-pour-le-développement)
     - [Contrats API (brouillon)](#contrats-api-brouillon)
   - [Démarrage local](#démarrage-local)
-    - [Frontend](#frontend-1)
-    - [Backend](#backend-1)
-      - [SAF-Control](#saf-control)
-      - [SAF-Runtime (à venir)](#saf-runtime-à-venir)
+    - [Option 1 : Développement natif](#option-1--développement-natif)
+      - [Frontend](#frontend-1)
+      - [Backend](#backend-1)
+        - [SAF-Control](#saf-control)
+        - [SAF-Runtime (à venir)](#saf-runtime-à-venir)
+    - [Option 2 : Docker Compose](#option-2--docker-compose)
   - [Conventions \& qualité](#conventions--qualité)
   - [Feuille de route](#feuille-de-route)
   - [Licence](#licence)
@@ -32,12 +44,30 @@
 
 ## Vision
 
-Construire une **plateforme d’acteurs** inspirée des modèles “actor/agents” (mailbox, supervision, tell/ask, timers), **scalable** et **observables**, utilisable via une **API claire** et une **UI** de pilotage.
+Construire une **plateforme d’acteurs** inspirée des modèles “actor/agents” (mailbox, supervision, tell/ask, timers), **scalable** et **observables**, utilisable via une **API claire** et une **UI** de pilotage.  
 Priorités : **simplicité d’intégration** (API REST), **résilience** (stratégies de reprise), **scalabilité horizontale** (multi-pods), **observabilité** (métriques, logs, événements temps réel).
+
+Le framework est pensé en **mode framework réutilisable** :
+
+- utilisable seul, comme une plateforme générique “SAF-Control + SAF-Runtime” accessible par API,
+- ou **embarqué** dans une application tierce qui fournit ses propres types d’acteurs (ex. City, Sensor…) via une **`ActorFactory`** sans que SAF ne dépende de cette application.
 
 ---
 
 ## Architecture
+
+### SAF-Actor-Core (cœur du framework)
+
+* **Rôle** : librairie Java générique qui définit les **abstractions d’acteurs** :
+  * `Actor`, `ActorRef`, `ActorSystem`, `Mailbox`, `SupervisionPolicy`, `Message`, etc.
+  * `ActorFactory` (contrat permettant de créer des acteurs à partir d’un type logique et d’un contexte).
+* **Responsabilités** :
+  * Modéliser le comportement d’un acteur (state + `receive(message)`).
+  * Encapsuler la logique de supervision (restart / resume / stop).
+  * Fournir un contrat d’**usine d’acteurs** (`ActorFactory`) que les applications tierces peuvent implémenter pour **brancher leurs propres acteurs métier**.
+* **Dépendances** :
+  * Ne dépend **d’aucun domaine applicatif** (pas de notion de ville, capteur, client, etc.).
+  * Est utilisé à la fois par **SAF-Runtime** et par les librairies d’acteurs métiers des applications.
 
 ### SAF-Control (plan de contrôle)
 
@@ -52,21 +82,40 @@ Priorités : **simplicité d’intégration** (API REST), **résilience** (strat
   * **Sécurité / quotas / audit** (plus tard).
 * **Interfaces** : API publique (REST + SSE).
 
+> SAF-Control ne connaît **pas** les acteurs métiers concrets (City, Sensor, etc.) : il manipule des “types d’acteurs” et des payloads génériques. Ce sont les **plugins d’application** (via ActorFactory dans le Runtime) qui donnent du sens à ces types.
+
 ### SAF-Runtime (plan d’exécution)
 
-* **Rôle** : exécuter les **acteurs** et livrer les **messages**.
+* **Rôle** : exécuter les **acteurs** et livrer les **messages**, de façon générique, à la manière d’un moteur Akka.
 * **Responsabilités** :
 
-  * **Actor** (état/behaviour), **Mailbox**, **Dispatcher** (threads/virtual threads).
-  * **Supervision locale** (restart d’un acteur en échec).
+  * **ActorSystem** qui orchestre :
+    * **Actor** (état/behaviour), **Mailbox**, **Dispatcher** (threads/virtual threads),
+    * **Supervision locale** (restart d’un acteur en échec),
+    * **Timers** / messages différés.
+  * **ActorFactory** : point d’extension pour brancher des acteurs métiers.
+    * Le Runtime ne connaît que l’**interface** `ActorFactory`.
+    * Une application tierce peut fournir une implémentation (plugin) qui dit :
+      * `"City"` → `new CityActor(...)`
+      * `"Sensor"` → `new SensorActor(...)`
   * **Routage** (tell/ask, timeouts, corrélation).
   * **Messages inter-pods** via **broker** (Kafka/RabbitMQ).
   * **Persistance** optionnelle (snapshots / event store).
   * **Health & metrics**.
 * **Interfaces** : endpoints **internes** (health, metrics). Pas d’API publique directe par défaut.
 
-> **Relation** : Les **clients** (UI, scripts, intégrations) parlent à **SAF-Control**.
-> **SAF-Control** orchestre les **SAF-Runtime**. Le Runtime **n’administre pas** Control.
+> Dans ce mode **embedded / plugin** :
+>
+> - le **framework SAF** fournit `SAF-Actor-Core`, `SAF-Runtime`, `SAF-Control`,
+> - une application métier fournit un **module d’acteurs** (qui dépend de `saf-actor-core`) + une implémentation d’`ActorFactory` injectée dans le Runtime,
+> - le runtime reste **générique** et ne dépend jamais du code métier.
+
+> **Relation** :
+>
+> - Les **clients** (UI, scripts, intégrations, microservices métier) parlent à **SAF-Control**.
+> - **SAF-Control** orchestre les **SAF-Runtime** (création, routage).
+> - **SAF-Runtime** instancie les acteurs concrets via une **ActorFactory fournie par l’application** (plugin).
+> - Le Runtime **n’administre pas** Control, et Control ne dépend pas des acteurs métiers.
 
 ### Flux type
 
@@ -74,7 +123,7 @@ Priorités : **simplicité d’intégration** (API REST), **résilience** (strat
 
 1. Client → **SAF-Control** : `POST /agents` (+type, params)
 2. Control publie une **commande** sur le **broker**
-3. Un **SAF-Runtime** consomme, **spawn** l’acteur
+3. Un **SAF-Runtime** consomme, demande à son `ActorFactory` de créer un acteur du type demandé (`"City"`, `"Sensor"`, etc. si l’application a fourni ces types), puis **spawn** l’acteur
 4. Runtime émet un **événement** `ActorStarted`
 5. Control met à jour le **registry** et **pousse** l’événement (SSE) au front
 
@@ -82,7 +131,7 @@ Priorités : **simplicité d’intégration** (API REST), **résilience** (strat
 
 1. Client → **SAF-Control** : `POST /agents/{id}/message` (payload, timeout)
 2. Control **route** vers le Runtime hébergeant l’acteur
-3. Runtime traite (mailbox → behaviour)
+3. Runtime traite (mailbox → behaviour), en s’appuyant sur les classes d’acteurs fournies par le plugin d’application
 4. Réponse → broker → **SAF-Control** → client (HTTP / stream)
 
 ---
@@ -108,9 +157,9 @@ Priorités : **simplicité d’intégration** (API REST), **résilience** (strat
 
 ## Arborescence du repo
 
-> **Pour l’instant** : frontend + backend (control & runtime). L’infra et d’autres libs arriveront au fur et à mesure.
+> **Pour l’instant** : frontend + backend (control & runtime). Le cœur d’acteurs (`saf-actor-core`) et d’autres libs/frameworks arriveront au fur et à mesure, mais la structure est pensée pour fonctionner en mode **framework autonome + plugins d’applications**.
 
-```
+```text
 SAF_PLATFORM/
 ├─ README.md                         # README global (vision, archi, démarrage)
 ├─ .gitignore                        # Ignore global
@@ -125,17 +174,17 @@ SAF_PLATFORM/
 │     │     │  ├─ java/com/acme/saf/saf_control/
 │     │     │  │  ├─ web/            # Controllers REST/SSE (ports in)
 │     │     │  │  ├─ application/    # Use cases (ports out → broker/registry)
-│     │     │  │  ├─ domain/         # Modèles “contrôle” (léger)
+│     │     │  │  ├─ domain/         # Modèles “contrôle” (léger, agnostiques métier)
 │     │     │  │  └─ infrastructure/  # Adapters (broker, registry store, config)
 │     │     │  └─ resources/
 │     │     │     └─ application.yml  # Config/profils (dev/test)
 │     │     └─ test/java/...          # Tests JUnit5 (à venir)
-│     └─ saf-runtime/                # Service plan d’exécution (acteurs)
+│     └─ saf-runtime/                # Service plan d’exécution (acteurs génériques)
 │        ├─ pom.xml
 │        └─ src/
 │           ├─ main/
 │           │  ├─ java/com/acme/saf/saf_runtime/
-│           │  │  ├─ domain/         # Actor, Mailbox, Dispatcher, Supervision
+│           │  │  ├─ domain/         # ActorSystem, Mailbox, Dispatcher, Supervision (cœur runtime)
 │           │  │  ├─ application/    # Timers, policies, orchestration locale
 │           │  │  ├─ infrastructure/ # Messaging/persistence adapters (broker/DB)
 │           │  │  └─ web/            # Health/metrics (interne)
@@ -178,7 +227,6 @@ SAF_PLATFORM/
       │  └─ utils.ts                 # Utilitaires (cn, formatters…)
       └─ app/                        # (à venir) router/layouts par pages/features
                                      # ex: agents/, messaging/, supervision/
-
 ```
 
 ---
@@ -203,12 +251,77 @@ SAF_PLATFORM/
   * Ports in : REST + SSE.
   * Ports out : **broker** (commandes), **registry store** (DB/cache).
   * Cas d’usage : `SpawnActor`, `DestroyActor`, `SendMessage`, `StreamEvents`.
+  * Reste **agnostique métier** : ne connaît que des types d’acteurs et des payloads sérialisés.
+
 * **SAF-Runtime** :
 
-  * Domaine : `Actor`, `ActorRef`, `Mailbox`, `Dispatcher`, `SupervisionPolicy`.
+  * Domaine : `Actor`, `ActorRef`, `Mailbox`, `Dispatcher`, `SupervisionPolicy` (via SAF-Actor-Core).
   * Ports in : **broker** (commandes).
   * Ports out : **broker** (événements, réponses).
   * Web : `GET /health`, `GET /metrics` (interne).
+  * Extensibilité : une application qui veut fonctionner en mode embedded fournit une **implémentation d’`ActorFactory`** (plugin) qui déclare comment instancier ses acteurs métier par type. Le runtime reste générique.
+
+### Sécurité (clé API)
+
+Les endpoints de **SAF-Control** sont protégés par une **clé API** simple, vérifiée via un filtre Spring (`ApiKeyFilter`).
+
+#### Configuration
+
+La clé est définie dans `application.properties` :
+
+```properties
+saf.security.api-key=cle-api
+```
+
+#### En-tête attendu
+
+Chaque requête doit inclure l’en-tête HTTP suivant :
+
+```text
+X-API-KEY: cle-api
+```
+
+#### Exemple de test (PowerShell)
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8080/agents -Headers @{ "X-API-KEY" = "cle-api" }
+```
+
+#### Exemple de test (cURL)
+
+```bash
+curl -H "X-API-KEY: cle-api" http://localhost:8080/agents
+```
+
+#### Exemple côté front (fetch)
+
+Lorsque le front communique avec le backend, il doit inclure la clé dans les en-têtes HTTP :
+
+```javascript
+fetch("http://localhost:8080/agents", {
+  method: "GET",
+  headers: {
+    "Content-Type": "application/json",
+    "X-API-KEY": "cle-api"
+  }
+})
+  .then(response => {
+    if (!response.ok) throw new Error("Unauthorized");
+    return response.json();
+  })
+  .then(data => console.log(data))
+  .catch(error => console.error(error));
+```
+
+#### Option pour le développement
+
+Pour simplifier les tests locaux, la vérification peut être désactivée en laissant la clé vide :
+
+```properties
+saf.security.api-key=
+```
+
+Dans ce cas, le filtre accepte toutes les requêtes sans contrôle.
 
 ### Contrats API (brouillon)
 
@@ -238,10 +351,14 @@ SAF_PLATFORM/
 
 ## Démarrage local
 
+Deux options sont disponibles pour démarrer la plateforme localement :
+
+### Option 1 : Développement natif
+
 > **Pré-requis** : Node.js ≥ 20, pnpm (ou npm), Java 21.
 > **Note** : le backend est encore en chantier ; seuls les scripts frontend sont actifs.
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend
@@ -250,9 +367,9 @@ pnpm dev
 # http://localhost:5173
 ```
 
-### Backend
+#### Backend
 
-#### SAF-Control
+##### SAF-Control
 
 ```bash
 cd backend/services/saf-control
@@ -266,9 +383,36 @@ cd backend/services/saf-control
 * **OpenAPI** : `GET http://localhost:8080/swagger`
 * **SSE (stub)** : `GET http://localhost:8080/events/stream`
 
-#### SAF-Runtime (à venir)
+##### SAF-Runtime (à venir)
 
 * `saf-runtime` : health/metrics
+
+### Option 2 : Docker Compose
+
+> **Pré-requis** : Docker Engine 20.10+, Docker Compose V2+, au moins 2 Go de RAM disponible.
+
+Pour déployer la plateforme avec Docker Compose (recommandé pour les tests et le déploiement), consultez le guide complet : **[DOCKER.md](./DOCKER.md)**
+
+**Démarrage rapide :**
+
+```bash
+# 1. Configurer les variables d'environnement
+cp .env.example .env
+
+# 2. Démarrer tous les services
+docker-compose up -d
+
+# 3. Vérifier les services
+docker-compose ps
+```
+
+**Accès :**
+* **Frontend** : http://localhost
+* **Backend API** : http://localhost:8080
+* **Swagger UI** : http://localhost:8080/swagger
+* **Health Check** : http://localhost:8080/actuator/health
+
+Pour plus de détails (architecture, commandes, dépannage, sécurité), voir **[DOCKER.md](./DOCKER.md)**.
 
 ---
 
@@ -277,7 +421,7 @@ cd backend/services/saf-control
 * **Branches** : `main` (stable), `dev` (intégration), `feature/*`.
 * **Commits** : Conventional Commits (`feat:`, `fix:`, `docs:`…).
 * **Qualité** :
-* 
+
   * Front : ESLint, Prettier.
   * Back : JUnit 5 — à intégrer.
 
@@ -286,11 +430,12 @@ cd backend/services/saf-control
 ## Feuille de route
 
 1. **Back – SAF-Control (MVP)** : endpoints `POST/DELETE/GET /agents`, `POST /agents/{id}/message`, `GET /events/stream`.
-2. **Back – SAF-Runtime (MVP)** : domaine `Actor/Mailbox/Dispatcher` minimal, `GET /health`, intégration broker simulée.
+2. **Back – SAF-Runtime (MVP)** : domaine `Actor/Mailbox/Dispatcher` minimal, `GET /health`, intégration broker simulée, introduction d’une **`ActorFactory`** pour permettre le mode plugin.
 3. **Front – Agents** : liste + création/suppression + stream SSE.
-4. **Broker réel** (Kafka ou RabbitMQ) + routage `ask` avec timeouts.
-5. **Supervision** (policies restart/resume/stop) + métriques.
-6. **Persistance** (snapshots/event store) — optionnel.
+4. **Back – SAF-Actor-Core** : stabilisation des interfaces `Actor`, `ActorRef`, `ActorSystem`, `ActorFactory` pour publication en tant que lib.
+5. **Broker réel** (Kafka ou RabbitMQ) + routage `ask` avec timeouts.
+6. **Supervision** (policies restart/resume/stop) + métriques.
+7. **Persistance** (snapshots/event store) — optionnel.
 
 ---
 
