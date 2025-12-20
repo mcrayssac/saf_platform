@@ -28,7 +28,7 @@ public class AgentsController {
         this.monitoringService = monitoringService;
     }
 
-    // ========== ENDPOINTS EXISTANTS (avec légère modification) ==========
+    // ========== ENDPOINTS DE BASE ==========
 
     @GetMapping
     @Operation(summary = "List all agents with their health status")
@@ -45,7 +45,7 @@ public class AgentsController {
     }
 
     @PostMapping
-    @Operation(summary = "Spawn a new agent")
+    @Operation(summary = "Spawn a new agent", description = "Creates and starts a new agent with the specified type, location, and supervision policy")
     public ResponseEntity<AgentView> create(@Valid @RequestBody AgentCreateRequest req) {
         AgentView created = service.spawn(req);
         AgentView view = monitoringService.buildAgentView(created.id());
@@ -78,7 +78,7 @@ public class AgentsController {
         return ResponseEntity.ok().build();
     }
 
-    // ========== NOUVEAUX ENDPOINTS MONITORING ==========
+    // ========== ENDPOINTS DE MONITORING ==========
 
     @GetMapping("/active")
     @Operation(summary = "List only active agents (responding to heartbeats)")
@@ -93,7 +93,7 @@ public class AgentsController {
     }
 
     @GetMapping("/status")
-    @Operation(summary = "List all agents with their health status (status endpoint)")
+    @Operation(summary = "List all agents with their health status")
     public Collection<AgentView> getAllAgentsWithStatus() {
         return monitoringService.getAllAgentsWithStatus();
     }
@@ -102,5 +102,39 @@ public class AgentsController {
     @Operation(summary = "Get global agent statistics")
     public AgentStatistics getStatistics() {
         return monitoringService.getStatistics();
+    }
+
+    // ========== ENDPOINT DE GESTION DE QUARANTAINE ==========
+
+    /**
+     * Libère un agent de la quarantaine.
+     */
+    @PostMapping("/{id}/release-quarantine")
+    @Operation(
+            summary = "Release an agent from quarantine",
+            description = "Manually releases an agent from quarantine after the underlying issue has been fixed. " +
+                    "Use with caution: releasing a still-faulty agent may cause it to fail again."
+    )
+    public ResponseEntity<Void> releaseFromQuarantine(@PathVariable String id) {
+        if (service.get(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        monitoringService.releaseFromQuarantine(id);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Vérifie si un agent est en quarantaine.
+     */
+    @GetMapping("/{id}/is-quarantined")
+    @Operation(summary = "Check if an agent is currently in quarantine")
+    public ResponseEntity<Boolean> isQuarantined(@PathVariable String id) {
+        if (service.get(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        boolean quarantined = monitoringService.isInQuarantine(id);
+        return ResponseEntity.ok(quarantined);
     }
 }

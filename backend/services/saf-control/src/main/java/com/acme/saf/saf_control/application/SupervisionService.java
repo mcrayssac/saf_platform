@@ -1,7 +1,6 @@
 package com.acme.saf.saf_control.application;
 
 import com.acme.saf.saf_control.domain.dto.AgentCreateRequest;
-import com.acme.saf.saf_control.domain.dto.AgentStatus;
 import com.acme.saf.saf_control.domain.dto.AgentView;
 import com.acme.saf.saf_control.domain.dto.Agent.SupervisionPolicy;
 import org.springframework.stereotype.Service;
@@ -16,43 +15,74 @@ public class SupervisionService {
     }
 
     /**
-     * Redémarre complètement un agent :
-     * 1. destruction de l'acteur existant
-     * 2. re-création d'un nouvel acteur du même type et même état
+     * Politique RESTART : Redémarrage complet de l'agent.
+     *
+     * PROCESSUS :
+     * 1. Détruit l'acteur existant (avec son état corrompu)
+     * 2. Crée un nouvel acteur du même type
+     * 3. Le nouvel agent repart avec un état vierge
+     * @param agent Agent à redémarrer
      */
     public void restart(AgentView agent) {
-        // 1. Destroy
+        System.out.println("Redémarrage de l'agent " + agent.id() + " (" + agent.type() + ")");
+
+        // 1. Destruction de l'agent défaillant
         controlService.destroy(agent.id());
-        // 2. Respawn
-        controlService.spawn(new AgentCreateRequest(agent.type()));
+
+        // 2. Re-création avec le même type et la même policy
+        controlService.spawn(new AgentCreateRequest(
+                agent.type(),
+                agent.host(),
+                agent.port(),
+                agent.policy()  // On conserve la même politique
+        ));
+
+        System.out.println("Nouvel agent créé pour remplacer " + agent.id());
     }
 
     /**
-     * Politique RESUME : l'erreur est ignorée,
-     * l'acteur reste dans son état actuel, aucune action corrective.
+     * Politique RESUME : Ignore l'erreur et laisse l'agent continuer.
+     *
+     * PROCESSUS :
+     * - Aucune action corrective
+     * - L'agent reste dans son état actuel
+     * - Utile pour les erreurs transitoires qui se résolvent d'elles-mêmes
+     * @param agent Agent à laisser continuer
      */
     public void resume(AgentView agent) {
-        System.out.println("Resuming agent " + agent.id());
+        System.out.println("Reprise de l'agent " + agent.id() + " sans intervention");
+        // Aucune action : l'agent continue son exécution normale
     }
 
     /**
-     * Politique STOP : l'acteur est arrêté définitivement
-     * (détruit sans recréation)
+     * Politique STOP : Arrêt définitif de l'agent.
+     *
+     * PROCESSUS :
+     * - Détruit l'agent sans le recréer
+     * - L'agent disparaît du système
+     * - Nécessite une intervention manuelle pour le relancer
+     * @param agent Agent à arrêter définitivement
      */
     public void stop(AgentView agent) {
-        // Immobiliser totalement
+        System.out.println("Arrêt définitif de l'agent " + agent.id());
         controlService.destroy(agent.id());
+        System.out.println("L'agent ne sera pas relancé automatiquement");
     }
 
     /**
-     * Applique la politique de supervision à un agent inactif
-     * (appelée lorsqu'un agent est en échec, expiré, ou en quarantaine)
+     * @param agent Agent à superviser
      */
     public void handle(AgentView agent) {
+        System.out.println("Supervision de l'agent " + agent.id() + " avec politique " + agent.policy());
+
         switch (agent.policy()) {
             case RESTART -> restart(agent);
             case RESUME  -> resume(agent);
             case STOP    -> stop(agent);
+            default -> {
+                System.err.println("Politique inconnue : " + agent.policy());
+                // Par défaut, on ne fait rien (équivalent à RESUME)
+            }
         }
     }
 }
