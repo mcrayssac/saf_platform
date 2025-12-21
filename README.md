@@ -34,7 +34,7 @@
       - [Frontend](#frontend-1)
       - [Backend](#backend-1)
         - [SAF-Control](#saf-control)
-        - [SAF-Runtime (à venir)](#saf-runtime-à-venir)
+        - [SAF-Runtime](#saf-runtime)
     - [Option 2 : Docker Compose](#option-2--docker-compose)
   - [Conventions \& qualité](#conventions--qualité)
   - [Feuille de route](#feuille-de-route)
@@ -164,7 +164,7 @@ SAF_PLATFORM/
 ├─ README.md                         # README global (vision, archi, démarrage)
 ├─ .gitignore                        # Ignore global
 
-├─ backend/                          # Services Spring Boot (Control + Runtime, à venir)      
+├─ backend/                          # Services Spring Boot (Control + Runtime)      
 │  ├─ pom.xml                        # POM parent (modules, versions) — si Maven, à venir
 │  └─ services/
 │     ├─ saf-control/                # Service plan de contrôle (API publique)
@@ -344,8 +344,8 @@ Dans ce cas, le filtre accepte toutes les requêtes sans contrôle.
 
 **SAF-Runtime — interne**
 
-* `GET /health` → `{"status": "UP"}`
-* `GET /metrics` → prom exposition
+* `GET /actuator/health` → `{"status": "UP"}`
+* `GET /actuator/prometheus` → prom exposition
 
 ---
 
@@ -379,13 +379,20 @@ cd backend/services/saf-control
 **Endpoints disponibles :**
 
 * **Santé** : `GET http://localhost:8080/actuator/health`
-* **Prometheus** : `GET http://localhost:8080/actuator/prometheus`
 * **OpenAPI** : `GET http://localhost:8080/swagger`
 * **SSE (stub)** : `GET http://localhost:8080/events/stream`
 
-##### SAF-Runtime (à venir)
+##### SAF-Runtime
 
-* `saf-runtime` : health/metrics
+```bash
+cd backend/services/saf-runtime
+./mvnw spring-boot:run
+```
+
+**Endpoints disponibles :**
+
+* **Santé** : `GET http://localhost:8081/actuator/health`
+* **Prometheus** : `GET http://localhost:8081/actuator/prometheus`
 
 ### Option 2 : Docker Compose
 
@@ -409,8 +416,10 @@ docker-compose ps
 **Accès :**
 * **Frontend** : http://localhost
 * **Backend API** : http://localhost:8080
+* **Runtime API** : http://localhost:8081
 * **Swagger UI** : http://localhost:8080/swagger
 * **Health Check** : http://localhost:8080/actuator/health
+* **Runtime Health Check** : http://localhost:8081/actuator/health
 
 Pour plus de détails (architecture, commandes, dépannage, sécurité), voir **[DOCKER.md](./DOCKER.md)**.
 
