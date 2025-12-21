@@ -157,40 +157,65 @@ Le framework est pensé en **mode framework réutilisable** :
 
 ## Arborescence du repo
 
-> **Pour l’instant** : frontend + backend (control & runtime). Le cœur d’acteurs (`saf-actor-core`) et d’autres libs/frameworks arriveront au fur et à mesure, mais la structure est pensée pour fonctionner en mode **framework autonome + plugins d’applications**.
+> **Architecture Framework/Application** : Le projet est maintenant structuré pour séparer clairement le **framework SAF** (100% générique et réutilisable) des **applications** qui l'utilisent (comme IoT City).
 
 ```text
 SAF_PLATFORM/
 ├─ README.md                         # README global (vision, archi, démarrage)
+├─ FRAMEWORK_APP_SEPARATION.md       # Guide de séparation framework/application
 ├─ .gitignore                        # Ignore global
+├─ docker-compose.yml                # Orchestration des services
 
-├─ backend/                          # Services Spring Boot (Control + Runtime)      
-│  ├─ pom.xml                        # POM parent (modules, versions) — si Maven, à venir
-│  └─ services/
-│     ├─ saf-control/                # Service plan de contrôle (API publique)
-│     │  ├─ pom.xml                  # Dépendances Spring Web/Actuator/JSON…
-│     │  └─ src/
-│     │     ├─ main/
-│     │     │  ├─ java/com/acme/saf/saf_control/
-│     │     │  │  ├─ web/            # Controllers REST/SSE (ports in)
-│     │     │  │  ├─ application/    # Use cases (ports out → broker/registry)
-│     │     │  │  ├─ domain/         # Modèles “contrôle” (léger, agnostiques métier)
-│     │     │  │  └─ infrastructure/  # Adapters (broker, registry store, config)
-│     │     │  └─ resources/
-│     │     │     └─ application.yml  # Config/profils (dev/test)
-│     │     └─ test/java/...          # Tests JUnit5 (à venir)
-│     └─ saf-runtime/                # Service plan d’exécution (acteurs génériques)
-│        ├─ pom.xml
-│        └─ src/
-│           ├─ main/
-│           │  ├─ java/com/acme/saf/saf_runtime/
-│           │  │  ├─ domain/         # ActorSystem, Mailbox, Dispatcher, Supervision (cœur runtime)
-│           │  │  ├─ application/    # Timers, policies, orchestration locale
-│           │  │  ├─ infrastructure/ # Messaging/persistence adapters (broker/DB)
-│           │  │  └─ web/            # Health/metrics (interne)
-│           │  └─ resources/
-│           │     └─ application.yml
-│           └─ test/java/...         # Tests de charge/chaos ciblés (à venir)
+├─ backend/
+│  ├─ framework/                     # 🔷 FRAMEWORK SAF (100% générique, réutilisable)
+│  │  ├─ saf-actor-core/             # Librairie Java d'acteurs (pas de Spring)
+│  │  │  ├─ pom.xml
+│  │  │  └─ src/main/java/com/acme/saf/actor/core/
+│  │  │     ├─ Actor.java            # Interface Actor
+│  │  │     ├─ ActorRef.java         # Référence d'acteur
+│  │  │     ├─ ActorSystem.java      # Interface du système d'acteurs
+│  │  │     ├─ ActorFactory.java     # Interface pour plugin d'acteurs métier
+│  │  │     ├─ Message.java          # Abstraction des messages
+│  │  │     ├─ Mailbox.java          # Boîte aux lettres
+│  │  │     ├─ Dispatcher.java       # Dispatch des messages
+│  │  │     └─ SupervisionStrategy.java  # Stratégies de supervision
+│  │  │
+│  │  ├─ saf-runtime/                # Engine runtime générique (Spring Boot)
+│  │  │  ├─ pom.xml
+│  │  │  └─ src/main/java/com/acme/saf/saf_runtime/
+│  │  │     ├─ DefaultActorSystem.java   # Implémentation ActorSystem
+│  │  │     ├─ InMemoryMailbox.java      # Implémentation Mailbox
+│  │  │     └─ metrics/                  # Métriques runtime
+│  │  │
+│  │  └─ saf-control/                # Control plane générique (Spring Boot)
+│  │     ├─ pom.xml
+│  │     └─ src/main/java/com/acme/saf/saf_control/
+│  │        ├─ web/                  # Controllers REST/SSE
+│  │        ├─ application/          # Services de contrôle
+│  │        ├─ domain/               # Modèles de contrôle
+│  │        ├─ security/             # Filtres de sécurité (API Key)
+│  │        └─ infrastructure/       # Adapters (events, routing)
+│  │
+│  └─ apps/                          # 🔶 APPLICATIONS (100% spécifiques au cas d'usage)
+│     └─ iot-city/                   # Application IoT City
+│        ├─ iot-city-domain/         # Acteurs métier (Client, Ville, Capteur)
+│        │  ├─ pom.xml               # Dépend uniquement de saf-actor-core
+│        │  └─ src/main/java/com/acme/iot/city/actors/
+│        │     ├─ ClientActor.java   # Acteur Client (métier)
+│        │     ├─ VilleActor.java    # Acteur Ville (métier)
+│        │     ├─ CapteurActor.java  # Acteur Capteur (métier)
+│        │     └─ IotActorFactory.java  # Factory pour créer les acteurs IoT
+│        │
+│        └─ iot-runtime/             # Runtime applicatif (SAF + IoT Domain)
+│           ├─ pom.xml               # Dépend de: saf-actor-core + iot-city-domain
+│           ├─ Dockerfile
+│           └─ src/
+│              ├─ main/java/com/acme/iot/runtime/
+│              │  ├─ IotRuntimeApplication.java  # Application Spring Boot
+│              │  └─ config/
+│              │     └─ ActorConfiguration.java  # Wire IotActorFactory
+│              └─ resources/
+│                 └─ application.yml
 
 └─ frontend/
    ├─ package.json                   # Scripts dev/build, deps React/Tailwind/shadcn

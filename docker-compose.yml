@@ -1,8 +1,8 @@
 services:
-  # Backend service
+  # Backend service (SAF Control - Framework)
   backend:
     build:
-      context: ./backend/services/saf-control
+      context: ./backend/framework/saf-control
       dockerfile: Dockerfile
     container_name: saf-backend
     ports:
@@ -24,20 +24,63 @@ services:
       start_period: 60s
     restart: unless-stopped
   
-  runtime:
+  # Client Actor Microservice
+  client-service:
     build:
-      context: ./backend/services/saf-runtime
-      dockerfile: Dockerfile
-    container_name: saf-runtime
+      context: .
+      dockerfile: ./backend/apps/iot-city/client-service/Dockerfile
+    container_name: client-service
     ports:
-      - "8081:8081"
+      - "8082:8082"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xmx512m -Xms256m
     networks:
       - saf-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Ville Actor Microservice
+  ville-service:
+    build:
+      context: .
+      dockerfile: ./backend/apps/iot-city/ville-service/Dockerfile
+    container_name: ville-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: -Xmx512m -Xms256m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Capteur Actor Microservice
+  capteur-service:
+    build:
+      context: .
+      dockerfile: ./backend/apps/iot-city/capteur-service/Dockerfile
+    container_name: capteur-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: -Xmx512m -Xms256m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -75,7 +118,9 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     depends_on:
-      - runtime
+      - client-service
+      - ville-service
+      - capteur-service
     networks:
       - saf-network
     restart: unless-stopped
