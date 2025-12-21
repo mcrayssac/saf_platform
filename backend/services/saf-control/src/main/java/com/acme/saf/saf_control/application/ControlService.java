@@ -4,6 +4,8 @@ import com.acme.saf.saf_control.domain.dto.*;
 import com.acme.saf.saf_control.infrastructure.events.EventBus;
 import com.acme.saf.saf_control.infrastructure.routing.RuntimeGateway;
 import com.acme.saf.saf_control.infrastructure.routing.RuntimeMessageEnvelope;
+import com.acme.saf.saf_control.runtime.core.ActorSystem;
+import com.acme.saf.saf_control.runtime.core.ActorRef;
 
 import jakarta.annotation.PostConstruct;
 
@@ -27,10 +29,12 @@ public class ControlService {
      */
     private final EventBus events;
     private final RuntimeGateway runtimeGateway;
+    private final ActorSystem actorSystem;
 
-    public ControlService(EventBus events, RuntimeGateway runtimeGateway) {
+    public ControlService(EventBus events, RuntimeGateway runtimeGateway, ActorSystem actorSystem) {
         this.events = events;
         this.runtimeGateway = runtimeGateway;
+        this.actorSystem = actorSystem;
     }
 
     /**
@@ -51,14 +55,22 @@ public class ControlService {
      * @return L'agent créé en état "running"
      */
     public AgentView spawn(AgentCreateRequest req) {
-        String id = UUID.randomUUID().toString();
-
         // Extraction des paramètres avec valeurs par défaut
         String host = req.host() != null ? req.host() : "localhost";
         int port = req.port() != 0 ? req.port() : 8080;
 
         // On utilise la policy de la requête
         var policy = req.policy() != null ? req.policy() : Agent.SupervisionPolicy.RESTART;
+
+        // Prépare les paramètres pour l'ActorSystem
+        Map<String, Object> params = new HashMap<>();
+        params.put("host", host);
+        params.put("port", port);
+        params.put("policy", policy);
+
+        // Crée l'acteur via l'ActorSystem
+        ActorRef actorRef = actorSystem.spawn(req.type(), params);
+        String id = actorRef.getId();
 
         // Phase 1 : Agent en démarrage
         AgentView starting = new AgentView(
@@ -106,6 +118,11 @@ public class ControlService {
      * Détruit un agent (arrêt et suppression du registre).
      */
     public void destroy(String id) {
+        // Arrête l'acteur dans le système
+        if (actorSystem.hasActor(id)) {
+            actorSystem.stop(id);
+        }
+
         AgentView removed = registry.remove(id);
         if (removed != null) {
             events.publish("ActorStopped", removed);
@@ -127,7 +144,7 @@ public class ControlService {
                 .filter(agent -> host.equalsIgnoreCase(agent.host()))
                 .collect(Collectors.toList());
     }
-    
+
     public Collection<AgentView> getAgentsByStatus(String status) {
         if (status == null || status.isBlank()) {
             return Collections.emptyList();
@@ -152,7 +169,7 @@ public class ControlService {
      * @return Accusé de réception avec ID de corrélation
      */
     public MessageAck sendMessage(String id, MessageRequest msg) {
-        // 1) Vérifier que l’agent existe
+        // 1) Vérifier que l'agent existe
         AgentView agent = registry.get(id);
         if (agent == null) {
             throw new NoSuchElementException("Unknown agent " + id);
@@ -161,7 +178,7 @@ public class ControlService {
         // 2) Générer un correlationId
         String corr = UUID.randomUUID().toString();
 
-        // 3) Construire l’enveloppe pour le Runtime
+        // 3) Construire l'enveloppe pour le Runtime
         RuntimeMessageEnvelope envelope = new RuntimeMessageEnvelope(
                 id,
                 agent.runtimeNode(),        // Route vers le bon runtime
@@ -171,7 +188,7 @@ public class ControlService {
                 corr
         );
 
-        // 4) Déléguer au gateway (mock aujourd’hui, vrai broker plus tard)
+        // 4) Déléguer au gateway (mock aujourd'hui, vrai broker plus tard)
         runtimeGateway.dispatch(envelope);
 
         // 5) Optionnel : notifier la UI via EventBus comme avant
@@ -185,10 +202,10 @@ public class ControlService {
         );
         events.publish("MessageDelivered", event);
 
-        // 6) Retourner l’ACK
+        // 6) Retourner l'ACK
         return new MessageAck(corr, "accepted");
     }
-    
+
     @PostConstruct
     public void debugRegistry() {
         // Ajouter un agent de test si le registry est vide

@@ -156,7 +156,7 @@ public class AgentMonitoringService {
                 supervisionService.handle(agent);
 
                 // 2. PUIS on met en quarantaine pour éviter la boucle infinie
-                System.out.println("Agent " + agent.id() + " mis en quarantaine");
+                quarantine.add(agent.id());
             }
         });
     }
