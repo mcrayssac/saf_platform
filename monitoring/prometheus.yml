@@ -3,7 +3,12 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: saf-runtime
+  - job_name: saf-control
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["runtime:8081"]
+      - targets: ["saf-control:8080"]
+
+  - job_name: iot-runtime
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["iot-runtime:8081"]

@@ -16,7 +16,11 @@ RUN npm ci && \
 # Copy source code
 COPY . .
 
-# Build the application
+# Build arguments for Vite
+ARG VITE_API_BASE=http://localhost:8080/api
+ARG VITE_API_KEY=test
+
+# Build the application with environment variables
 RUN npm run build
 
 # Production stage

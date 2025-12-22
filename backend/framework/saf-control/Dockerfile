@@ -2,12 +2,19 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 
-# Copy pom.xml and download dependencies (cached layer)
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+# Copy framework parent pom
+COPY backend/framework/pom.xml /app/framework/pom.xml
 
-# Copy source code and build
-COPY src ./src
+# Copy saf-control application
+COPY backend/framework/saf-control/pom.xml /app/saf-control/pom.xml
+COPY backend/framework/saf-control/src /app/saf-control/src
+
+# Build framework parent pom first
+WORKDIR /app/framework
+RUN mvn clean install -N -DskipTests
+
+# Build saf-control
+WORKDIR /app/saf-control
 RUN mvn clean package -DskipTests
 
 # Runtime stage
@@ -19,7 +26,7 @@ RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 
 # Copy the built jar from build stage
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /app/saf-control/target/*.jar app.jar
 
 # Expose port
 EXPOSE 8080
