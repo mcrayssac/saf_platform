@@ -1,4 +1,4 @@
-package com.acme.saf.runtime;
+package com.acme.saf.saf_runtime;
 
 import com.acme.saf.actor.core.Mailbox;
 import com.acme.saf.actor.core.Message;

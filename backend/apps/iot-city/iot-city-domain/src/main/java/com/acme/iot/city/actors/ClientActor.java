@@ -1,7 +1,7 @@
 package com.acme.iot.city.actors;
 
 import com.acme.saf.actor.core.Actor;
-import com.acme.saf.actor.core.ActorContext;
+import com.acme.saf.actor.core.Message;
 
 import java.util.Map;
 
@@ -19,19 +19,20 @@ public class ClientActor implements Actor {
     }
 
     @Override
-    public void preStart(ActorContext context) {
+    public void preStart() {
         System.out.println("ClientActor démarré avec params: " + params);
         state = "running";
     }
 
     @Override
-    public void receive(Object message, ActorContext context) {
-        System.out.println("ClientActor reçoit: " + message);
+    public void receive(Message message) {
+        Object payload = message.getPayload();
+        System.out.println("ClientActor reçoit: " + payload);
 
-        if (message instanceof String msg) {
+        if (payload instanceof String msg) {
             if (msg.startsWith("QUERY:")) {
                 String response = "Réponse du client: " + msg.substring(6);
-                context.reply(response);
+                System.out.println(response);
             } else {
                 System.out.println("Message traité: " + msg);
             }
@@ -39,7 +40,7 @@ public class ClientActor implements Actor {
     }
 
     @Override
-    public void postStop(ActorContext context) {
+    public void postStop() {
         System.out.println("ClientActor arrêté");
         state = "stopped";
     }

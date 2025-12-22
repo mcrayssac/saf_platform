@@ -14,9 +14,15 @@ public class DefaultActorSystem implements ActorSystem {
 
     private final ActorFactory factory;
     private final Map<String, ActorInstance> actors = new ConcurrentHashMap<>();
+    private final Mailbox mailbox;
 
     public DefaultActorSystem(ActorFactory factory) {
+        this(factory, new InMemoryMailbox());
+    }
+
+    public DefaultActorSystem(ActorFactory factory, Mailbox mailbox) {
         this.factory = factory;
+        this.mailbox = mailbox;
     }
 
     @Override
@@ -32,8 +38,12 @@ public class DefaultActorSystem implements ActorSystem {
         ActorInstance instance = new ActorInstance(actor, ref);
         actors.put(id, instance);
 
-        ActorContext context = new ActorContextImpl(ref, null, this);
-        actor.preStart(context);
+        try {
+            actor.preStart();
+        } catch (Exception e) {
+            System.err.println("Erreur lors du démarrage de l'acteur " + id + ": " + e.getMessage());
+            e.printStackTrace();
+        }
 
         System.out.println("Acteur créé: " + id + " (type: " + type + ")");
 
@@ -50,8 +60,12 @@ public class DefaultActorSystem implements ActorSystem {
     public void stop(String id) {
         ActorInstance instance = actors.remove(id);
         if (instance != null) {
-            ActorContext context = new ActorContextImpl(instance.ref, null, this);
-            instance.actor.postStop(context);
+            try {
+                instance.actor.postStop();
+            } catch (Exception e) {
+                System.err.println("Erreur lors de l'arrêt de l'acteur " + id + ": " + e.getMessage());
+                e.printStackTrace();
+            }
             System.out.println("Acteur arrêté: " + id);
         }
     }
@@ -67,7 +81,7 @@ public class DefaultActorSystem implements ActorSystem {
         return actors.containsKey(id);
     }
 
-    void processMessage(String actorId, Object message, ActorRef sender, CompletableFuture<Object> responseFuture) {
+    void processMessage(String actorId, Message message, ActorRef sender, CompletableFuture<Object> responseFuture) {
         ActorInstance instance = actors.get(actorId);
         if (instance == null) {
             if (responseFuture != null) {
@@ -76,18 +90,21 @@ public class DefaultActorSystem implements ActorSystem {
             return;
         }
 
-        // Stub Mailbox : on simule l'ajout dans la file
-        System.out.println("[MAILBOX STUB] Message ajouté pour acteur " + actorId + ": " + message);
+        // Mailbox : ajout + lecture FIFO
+        mailbox.enqueue(message);
+        System.out.println("[MAILBOX] Message ajouté pour acteur " + actorId + ": " + message);
 
-        // Stub Dispatcher : on simule le dispatch (traitement direct pour l'instant)
-        System.out.println("[DISPATCHER STUB] Traitement du message pour acteur " + actorId);
-
-        ActorContext context = new ActorContextImpl(instance.ref, sender, this, responseFuture);
+        // Dispatcher : traitement direct pour l'instant
+        System.out.println("[DISPATCHER] Traitement du message pour acteur " + actorId);
+        Message next = mailbox.dequeue();
+        if (next == null) {
+            return;
+        }
 
         try {
-            instance.actor.receive(message, context);
+            instance.actor.receive(next);
         } catch (Exception e) {
-            System.err.println("[DISPATCHER STUB] Erreur lors du traitement: " + e.getMessage());
+            System.err.println("[DISPATCHER] Erreur lors du traitement: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -114,71 +131,46 @@ public class DefaultActorSystem implements ActorSystem {
         }
 
         @Override
-        public String getId() {
+        public String getActorId() {
             return id;
         }
 
         @Override
-        public String getType() {
-            return type;
+        public String getPath() {
+            return "/user/" + id;
         }
 
         @Override
-        public void tell(Object message) {
+        public void tell(Message message) {
             system.processMessage(id, message, null, null);
         }
 
         @Override
-        public CompletableFuture<Object> ask(Object message, long timeoutMs) {
+        public void tell(Message message, ActorRef sender) {
+            system.processMessage(id, message, sender, null);
+        }
+
+        @Override
+        public CompletableFuture<Object> ask(Message message, long timeout, TimeUnit unit) {
             CompletableFuture<Object> future = new CompletableFuture<>();
-            future.orTimeout(timeoutMs, TimeUnit.MILLISECONDS);
+            future.orTimeout(timeout, unit);
             system.processMessage(id, message, this, future);
             return future;
         }
 
         @Override
+        public void forward(Message message, ActorRef originalSender) {
+            system.processMessage(id, message, originalSender, null);
+        }
+
+        @Override
+        public boolean isActive() {
+            return system.hasActor(id);
+        }
+
+        @Override
         public void stop() {
             system.stop(id);
-        }
-    }
-
-    private static class ActorContextImpl implements ActorContext {
-        private final ActorRef self;
-        private final ActorRef sender;
-        private final ActorSystem system;
-        private final CompletableFuture<Object> responseFuture;
-
-        ActorContextImpl(ActorRef self, ActorRef sender, ActorSystem system) {
-            this(self, sender, system, null);
-        }
-
-        ActorContextImpl(ActorRef self, ActorRef sender, ActorSystem system, CompletableFuture<Object> responseFuture) {
-            this.self = self;
-            this.sender = sender;
-            this.system = system;
-            this.responseFuture = responseFuture;
-        }
-
-        @Override
-        public ActorRef getSelf() {
-            return self;
-        }
-
-        @Override
-        public ActorRef getSender() {
-            return sender;
-        }
-
-        @Override
-        public ActorSystem getSystem() {
-            return system;
-        }
-
-        @Override
-        public void reply(Object response) {
-            if (responseFuture != null) {
-                responseFuture.complete(response);
-            }
         }
     }
 }

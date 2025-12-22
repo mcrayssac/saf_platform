@@ -90,13 +90,13 @@ Mailbox (interface de saf-actor-core)
 
 ### Compiler le module
 ```bash
-cd backend/services/saf-runtime
+cd backend/framework/saf-runtime
 mvn compile
 ```
 
 ### Utiliser dans votre code
 ```java
-import com.acme.saf.runtime.InMemoryMailbox;
+import com.acme.saf.saf_runtime.InMemoryMailbox;
 import com.acme.saf.actor.core.Mailbox;
 
 // Créer et utiliser
