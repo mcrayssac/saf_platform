@@ -4,11 +4,13 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.0</version>
+        <version>3.5.6</version>
     </parent>
     <groupId>com.acme.iot</groupId>
-    <artifactId>[SERVICE-NAME]</artifactId>  <!-- client-service, ville-service, or capteur-service -->
+    <artifactId>capteur-service</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <name>capteur-service</name>
+    <description>Capteur actor microservice for IoT City</description>
     <properties>
         <java.version>21</java.version>
     </properties>

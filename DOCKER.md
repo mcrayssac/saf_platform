@@ -33,11 +33,13 @@ docker-compose up -d
 ```
 
 This command will:
-- Build the backend Docker image (Spring Boot with Java 21)
-- Build the runtime Docker image (Spring Boot with Java 21)
+- Build the backend Docker image (SAF-Control, Spring Boot with Java 21)
+- Build the runtime Docker image (SAF-Runtime, Spring Boot with Java 21)
+- Build the IoT City microservices (client/ville/capteur)
 - Build the frontend Docker image (React with Nginx)
 - Start the backend service
 - Start the runtime service
+- Start the IoT City microservices
 - Start the frontend service
 - Start Prometheus for metrics scraping
 
@@ -56,6 +58,9 @@ All services should show as "healthy" after initialization.
 - **Frontend**: http://localhost
 - **Backend API**: http://localhost:8080
 - **Runtime API**: http://localhost:8081
+- **Client service**: http://localhost:8082
+- **Ville service**: http://localhost:8083
+- **Capteur service**: http://localhost:8084
 - **Swagger UI**: http://localhost:8080/swagger
 - **Health Check**: http://localhost:8080/actuator/health
 - **Runtime Health Check**: http://localhost:8081/actuator/health
@@ -81,13 +86,15 @@ All services should show as "healthy" after initialization.
 │  (Spring Boot)  │
 └─────────────────┘
          │
-         ▼
-┌─────────────────┐
-│     Runtime     │  (Port 8081)
-│  (Spring Boot)  │
-└─────────────────┘
-         │
-         ▼
+         ├─────────────┐
+         │             │
+         ▼             ▼
+┌─────────────────┐ ┌─────────────────┐
+│     Runtime     │ │  IoT Services   │
+│  (Port 8081)    │ │ (8082-8084)     │
+└─────────────────┘ └─────────────────┘
+         │             │
+         ▼             ▼
 ┌─────────────────┐
 │   Prometheus    │  (Port 9090)
 └─────────────────┘
@@ -106,6 +113,8 @@ docker-compose up
 
 # Start specific service
 docker-compose up -d backend
+docker-compose up -d runtime
+docker-compose up -d client-service
 ```
 
 ### Stop Services
@@ -129,6 +138,7 @@ docker-compose logs -f
 
 # View logs for specific service
 docker-compose logs -f backend
+docker-compose logs -f runtime
 docker-compose logs -f frontend
 ```
 
@@ -140,6 +150,8 @@ docker-compose restart
 
 # Restart specific service
 docker-compose restart backend
+docker-compose restart runtime
+docker-compose restart client-service
 ```
 
 ### Rebuild Images
@@ -150,6 +162,8 @@ docker-compose build
 
 # Rebuild specific service
 docker-compose build backend
+docker-compose build runtime
+docker-compose build client-service
 
 # Rebuild and start
 docker-compose up -d --build
@@ -179,6 +193,24 @@ docker-compose up -d --build
 - **Environment Variables**:
   - `SPRING_PROFILES_ACTIVE`: Spring profile (default: prod)
   - `JAVA_OPTS`: JVM options (default: -Xmx512m -Xms256m)
+
+### Client Service (Spring Boot)
+
+- **Container**: `client-service`
+- **Port**: 8082
+- **Health Check**: `/actuator/health`
+
+### Ville Service (Spring Boot)
+
+- **Container**: `ville-service`
+- **Port**: 8083
+- **Health Check**: `/actuator/health`
+
+### Capteur Service (Spring Boot)
+
+- **Container**: `capteur-service`
+- **Port**: 8084
+- **Health Check**: `/actuator/health`
 
 ### Frontend (React + Nginx)
 
@@ -278,7 +310,7 @@ docker-compose up -d --build
 All API requests (except public endpoints) require the `X-API-KEY` header:
 
 ```bash
-curl -H "X-API-KEY: your-api-key-here" http://localhost:8080/api/agents
+curl -H "X-API-KEY: your-api-key-here" http://localhost:8080/agents
 ```
 
 Public endpoints (no authentication required):
@@ -298,6 +330,16 @@ curl http://localhost:8080/actuator/health
 
 # Runtime health
 curl http://localhost:8081/actuator/health
+
+# Client service health
+curl http://localhost:8082/actuator/health
+
+# Ville service health
+curl http://localhost:8083/actuator/health
+
+# Capteur service health
+curl http://localhost:8084/actuator/health
+
 
 # Frontend (returns 200 if healthy)
 curl -I http://localhost/
@@ -329,9 +371,26 @@ docker stats
 For local development with hot reload, run services separately:
 
 ```bash
-# Backend
-cd backend/services/saf-control
+# Control
+cd backend/framework/saf-control
 ./mvnw spring-boot:run
+
+# Runtime
+cd backend/framework/saf-runtime
+./mvnw spring-boot:run
+
+# Client service
+cd backend/apps/iot-city/client-service
+mvn spring-boot:run
+
+# Ville service
+cd backend/apps/iot-city/ville-service
+mvn spring-boot:run
+
+# Capteur service
+cd backend/apps/iot-city/capteur-service
+mvn spring-boot:run
+
 
 # Frontend
 cd frontend

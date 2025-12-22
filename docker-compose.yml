@@ -23,6 +23,27 @@ services:
       retries: 5
       start_period: 60s
     restart: unless-stopped
+
+  # Runtime service (SAF Runtime - Framework)
+  runtime:
+    build:
+      context: ./backend/framework/saf-runtime
+      dockerfile: Dockerfile
+    container_name: saf-runtime
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: -Xmx512m -Xms256m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
   
   # Client Actor Microservice
   client-service:
@@ -118,6 +139,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     depends_on:
+      - runtime
       - client-service
       - ville-service
       - capteur-service

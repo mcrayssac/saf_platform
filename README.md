@@ -33,8 +33,9 @@
     - [Option 1 : Développement natif](#option-1--développement-natif)
       - [Frontend](#frontend-1)
       - [Backend](#backend-1)
-        - [SAF-Control](#saf-control)
-        - [SAF-Runtime](#saf-runtime)
+        - [SAF-Control (framework)](#saf-control-framework)
+        - [SAF-Runtime (framework)](#saf-runtime-framework)
+        - [Microservices IoT City](#microservices-iot-city)
     - [Option 2 : Docker Compose](#option-2--docker-compose)
   - [Conventions \& qualité](#conventions--qualité)
   - [Feuille de route](#feuille-de-route)
@@ -162,12 +163,14 @@ Le framework est pensé en **mode framework réutilisable** :
 ```text
 SAF_PLATFORM/
 ├─ README.md                         # README global (vision, archi, démarrage)
-├─ FRAMEWORK_APP_SEPARATION.md       # Guide de séparation framework/application
 ├─ .gitignore                        # Ignore global
 ├─ docker-compose.yml                # Orchestration des services
+├─ DOCKER.md                         # Guide de déploiement Docker
+├─ monitoring/                       # Config Prometheus
 
 ├─ backend/
 │  ├─ framework/                     # 🔷 FRAMEWORK SAF (100% générique, réutilisable)
+│  │  ├─ pom.xml                     # POM parent du framework
 │  │  ├─ saf-actor-core/             # Librairie Java d'acteurs (pas de Spring)
 │  │  │  ├─ pom.xml
 │  │  │  └─ src/main/java/com/acme/saf/actor/core/
@@ -206,6 +209,9 @@ SAF_PLATFORM/
 │        │     ├─ CapteurActor.java  # Acteur Capteur (métier)
 │        │     └─ IotActorFactory.java  # Factory pour créer les acteurs IoT
 │        │
+│        ├─ client-service/          # Microservice Client (Spring Boot)
+│        ├─ ville-service/           # Microservice Ville (Spring Boot)
+│        ├─ capteur-service/         # Microservice Capteur (Spring Boot)
 │        └─ iot-runtime/             # Runtime applicatif (SAF + IoT Domain)
 │           ├─ pom.xml               # Dépend de: saf-actor-core + iot-city-domain
 │           ├─ Dockerfile
@@ -381,7 +387,7 @@ Deux options sont disponibles pour démarrer la plateforme localement :
 ### Option 1 : Développement natif
 
 > **Pré-requis** : Node.js ≥ 20, pnpm (ou npm), Java 21.
-> **Note** : le backend est encore en chantier ; seuls les scripts frontend sont actifs.
+> **Note** : le backend est encore en chantier ; seuls les endpoints/stubs principaux sont disponibles.
 
 #### Frontend
 
@@ -394,10 +400,10 @@ pnpm dev
 
 #### Backend
 
-##### SAF-Control
+##### SAF-Control (framework)
 
 ```bash
-cd backend/services/saf-control
+cd backend/framework/saf-control
 ./mvnw spring-boot:run
 ```
 
@@ -407,10 +413,10 @@ cd backend/services/saf-control
 * **OpenAPI** : `GET http://localhost:8080/swagger`
 * **SSE (stub)** : `GET http://localhost:8080/events/stream`
 
-##### SAF-Runtime
+##### SAF-Runtime (framework)
 
 ```bash
-cd backend/services/saf-runtime
+cd backend/framework/saf-runtime
 ./mvnw spring-boot:run
 ```
 
@@ -418,6 +424,29 @@ cd backend/services/saf-runtime
 
 * **Santé** : `GET http://localhost:8081/actuator/health`
 * **Prometheus** : `GET http://localhost:8081/actuator/prometheus`
+
+##### Microservices IoT City
+
+```bash
+cd backend/apps/iot-city/client-service
+mvn spring-boot:run
+```
+
+```bash
+cd backend/apps/iot-city/ville-service
+mvn spring-boot:run
+```
+
+```bash
+cd backend/apps/iot-city/capteur-service
+mvn spring-boot:run
+```
+
+**Ports par défaut :**
+
+* **Client** : `http://localhost:8082/actuator/health`
+* **Ville** : `http://localhost:8083/actuator/health`
+* **Capteur** : `http://localhost:8084/actuator/health`
 
 ### Option 2 : Docker Compose
 
@@ -441,10 +470,13 @@ docker-compose ps
 **Accès :**
 * **Frontend** : http://localhost
 * **Backend API** : http://localhost:8080
-* **Runtime API** : http://localhost:8081
+* **Client service** : http://localhost:8082
+* **Ville service** : http://localhost:8083
+* **Capteur service** : http://localhost:8084
+* **Runtime API** : http://localhost:8081 (si SAF-Runtime est lancé en local)
 * **Swagger UI** : http://localhost:8080/swagger
 * **Health Check** : http://localhost:8080/actuator/health
-* **Runtime Health Check** : http://localhost:8081/actuator/health
+* **Runtime Health Check** : http://localhost:8081/actuator/health (si SAF-Runtime est lancé en local)
 
 Pour plus de détails (architecture, commandes, dépannage, sécurité), voir **[DOCKER.md](./DOCKER.md)**.
 
