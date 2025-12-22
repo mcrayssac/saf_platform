@@ -1,4 +1,4 @@
-package main.java.com.acme.saf.saf_runtime.metrics;
+package com.acme.saf.saf_runtime.metrics;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;

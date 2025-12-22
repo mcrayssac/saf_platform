@@ -1,4 +1,4 @@
-package main.java.com.acme.saf.saf_runtime.metrics;
+package com.acme.saf.saf_runtime.metrics;
 
 import org.springframework.stereotype.Component;
 

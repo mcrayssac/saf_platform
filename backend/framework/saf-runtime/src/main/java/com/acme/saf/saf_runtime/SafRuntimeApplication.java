@@ -1,4 +1,4 @@
-package main.java.com.acme.saf.saf_runtime;
+package com.acme.saf.saf_runtime;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
