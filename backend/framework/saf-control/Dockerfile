@@ -5,17 +5,19 @@ WORKDIR /app
 # Copy framework parent pom
 COPY backend/framework/pom.xml /app/framework/pom.xml
 
-# Copy saf-control application
-COPY backend/framework/saf-control/pom.xml /app/saf-control/pom.xml
-COPY backend/framework/saf-control/src /app/saf-control/src
+# Copy all framework modules
+COPY backend/framework/saf-actor-core/pom.xml /app/framework/saf-actor-core/pom.xml
+COPY backend/framework/saf-actor-core/src /app/framework/saf-actor-core/src
 
-# Build framework parent pom first
+COPY backend/framework/saf-runtime/pom.xml /app/framework/saf-runtime/pom.xml
+COPY backend/framework/saf-runtime/src /app/framework/saf-runtime/src
+
+COPY backend/framework/saf-control/pom.xml /app/framework/saf-control/pom.xml
+COPY backend/framework/saf-control/src /app/framework/saf-control/src
+
+# Build all framework modules
 WORKDIR /app/framework
-RUN mvn clean install -N -DskipTests
-
-# Build saf-control
-WORKDIR /app/saf-control
-RUN mvn clean package -DskipTests
+RUN mvn clean install -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
@@ -26,7 +28,7 @@ RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 
 # Copy the built jar from build stage
-COPY --from=build /app/saf-control/target/*.jar app.jar
+COPY --from=build /app/framework/saf-control/target/*.jar app.jar
 
 # Expose port
 EXPOSE 8080

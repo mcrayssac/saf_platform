@@ -114,4 +114,68 @@ public class RuntimeProxyController {
                 .retrieve()
                 .toEntity(Map.class);
     }
+    
+    /**
+     * Generic wildcard proxy for any runtime-specific API endpoints.
+     * This allows application runtimes to expose custom endpoints (e.g., /api/cities, /api/sensors)
+     * without requiring changes to the framework's saf-control layer.
+     * 
+     * Pattern: GET /api/{path}/** -> forwards to runtime: /api/{path}/**
+     * 
+     * Framework-agnostic - applications can expose any endpoints they need.
+     */
+    @Operation(summary = "Generic API proxy",
+               description = "Transparently proxies any API request to the configured runtime. Allows runtimes to expose custom endpoints without framework changes.")
+    @GetMapping("/**")
+    public Mono<ResponseEntity<Object>> proxyGetRequest(
+            @Parameter(hidden = true) jakarta.servlet.http.HttpServletRequest request) {
+        String path = request.getRequestURI().substring(request.getContextPath().length() + 4); // Remove "/api"
+        return webClient.get()
+                .uri("/api" + path + (request.getQueryString() != null ? "?" + request.getQueryString() : ""))
+                .retrieve()
+                .toEntity(Object.class);
+    }
+    
+    /**
+     * Generic wildcard proxy for POST requests
+     */
+    @PostMapping("/**")
+    public Mono<ResponseEntity<Object>> proxyPostRequest(
+            @Parameter(hidden = true) jakarta.servlet.http.HttpServletRequest request,
+            @RequestBody(required = false) Object body) {
+        String path = request.getRequestURI().substring(request.getContextPath().length() + 4);
+        return webClient.post()
+                .uri("/api" + path)
+                .bodyValue(body != null ? body : Map.of())
+                .retrieve()
+                .toEntity(Object.class);
+    }
+    
+    /**
+     * Generic wildcard proxy for PUT requests
+     */
+    @PutMapping("/**")
+    public Mono<ResponseEntity<Object>> proxyPutRequest(
+            @Parameter(hidden = true) jakarta.servlet.http.HttpServletRequest request,
+            @RequestBody(required = false) Object body) {
+        String path = request.getRequestURI().substring(request.getContextPath().length() + 4);
+        return webClient.put()
+                .uri("/api" + path)
+                .bodyValue(body != null ? body : Map.of())
+                .retrieve()
+                .toEntity(Object.class);
+    }
+    
+    /**
+     * Generic wildcard proxy for DELETE requests
+     */
+    @DeleteMapping("/**")
+    public Mono<ResponseEntity<Void>> proxyDeleteRequest(
+            @Parameter(hidden = true) jakarta.servlet.http.HttpServletRequest request) {
+        String path = request.getRequestURI().substring(request.getContextPath().length() + 4);
+        return webClient.delete()
+                .uri("/api" + path)
+                .retrieve()
+                .toEntity(Void.class);
+    }
 }

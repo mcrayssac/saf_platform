@@ -8,7 +8,17 @@ scrape_configs:
     static_configs:
       - targets: ["saf-control:8080"]
 
-  - job_name: iot-runtime
+  - job_name: client-service
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["iot-runtime:8081"]
+      - targets: ["client-service:8084"]
+
+  - job_name: ville-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["ville-service:8085"]
+
+  - job_name: capteur-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["capteur-service:8086"]

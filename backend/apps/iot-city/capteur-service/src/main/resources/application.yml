@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: capteur-service
+
+server:
+  port: 8086
+
+# SAF Control configuration
+saf-control:
+  url: ${SAF_CONTROL_URL:http://saf-control:8080}
+  service-id: capteur-service
+  service-url: ${SERVICE_URL:http://capteur-service:8086}
+  api-key: ${SAF_CONTROL_API_KEY:default-api-key}
+
+# Actor System Configuration
+actor:
+  system:
+    name: capteur-actor-system
+    dispatcher:
+      threads: 10
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.acme.iot.capteur: DEBUG
+    com.acme.saf: DEBUG

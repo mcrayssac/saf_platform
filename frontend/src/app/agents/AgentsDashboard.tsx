@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import { agentsApi } from './api';
+// Note: This file is deprecated. Use IotCityDashboard instead.
+// import { agentsApi } from './actorApi';
 import type { Agent, AgentStatistics, AgentCreateRequest } from './types';
+
+// Stub to prevent compilation errors (file not currently used)
+const agentsApi: any = {};
 
 export function AgentsDashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);

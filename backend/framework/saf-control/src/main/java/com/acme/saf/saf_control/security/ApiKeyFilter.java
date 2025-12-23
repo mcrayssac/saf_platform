@@ -49,6 +49,8 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         String apiKey = request.getHeader(HEADER_NAME);
         log.debug("ApiKeyFilter invoked for path: {}", request.getRequestURI());
         log.debug("Validating API key for request");
+        log.debug("Received API key header value: {}", apiKey == null ? "null" : "[REDACTED-" + apiKey.length() + " chars]");
+        log.debug("Expected API key: {}", validApiKey == null ? "null" : "[REDACTED-" + validApiKey.length() + " chars]");
         
         if (validApiKey == null || validApiKey.isBlank()) {
             log.warn("No API key configured. Skipping API key validation for all endpoints.");
@@ -66,6 +68,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
             log.debug("Authentication set in SecurityContext");
             filterChain.doFilter(request, response);
         } else {
+            log.warn("API key validation FAILED. Returning 403 Forbidden");
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);  // Retourner 403 Forbidden
             response.getWriter().write("Forbidden");
         }

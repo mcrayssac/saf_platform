@@ -1,40 +1,14 @@
 services:
-  # IoT Runtime - Application Runtime with all actors (CLIENT, VILLE, CAPTEUR)
-  iot-runtime:
-    build:
-      context: .
-      dockerfile: ./backend/apps/iot-city/iot-runtime/Dockerfile
-    container_name: iot-runtime
-    ports:
-      - "8081:8081"  # Internal port, not exposed externally in production
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: -Xmx512m -Xms256m
-    networks:
-      - saf-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actors/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    restart: unless-stopped
-
-  # SAF Control - API Gateway (Security + Swagger + Transparent Proxy)
+  # SAF Control - Central registry and coordination service
   saf-control:
     build:
       context: .
       dockerfile: ./backend/framework/saf-control/Dockerfile
     container_name: saf-control
-    depends_on:
-      iot-runtime:
-        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      # Runtime configuration
-      RUNTIME_DEFAULT_URL: http://iot-runtime:8081
       # Security
       SAF_SECURITY_API_KEY: ${SAF_API_KEY:-mock-secret}
       # JVM options
@@ -49,13 +23,94 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # Client Service - Microservice for ClientActor
+  client-service:
+    build:
+      context: .
+      dockerfile: ./backend/apps/iot-city/client-service/Dockerfile
+    container_name: client-service
+    depends_on:
+      saf-control:
+        condition: service_healthy
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SAF_CONTROL_URL: http://saf-control:8080
+      SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
+      SERVICE_URL: http://client-service:8084
+      JAVA_OPTS: -Xmx256m -Xms128m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Ville Service - Microservice for VilleActor
+  ville-service:
+    build:
+      context: .
+      dockerfile: ./backend/apps/iot-city/ville-service/Dockerfile
+    container_name: ville-service
+    depends_on:
+      saf-control:
+        condition: service_healthy
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SAF_CONTROL_URL: http://saf-control:8080
+      SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
+      SERVICE_URL: http://ville-service:8085
+      JAVA_OPTS: -Xmx256m -Xms128m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Capteur Service - Microservice for CapteurActor
+  capteur-service:
+    build:
+      context: .
+      dockerfile: ./backend/apps/iot-city/capteur-service/Dockerfile
+    container_name: capteur-service
+    depends_on:
+      saf-control:
+        condition: service_healthy
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SAF_CONTROL_URL: http://saf-control:8080
+      SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
+      SERVICE_URL: http://capteur-service:8086
+      JAVA_OPTS: -Xmx256m -Xms128m
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8086/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
   # Frontend - React UI
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE: http://localhost:8080/api
+        VITE_API_BASE: ${VITE_API_BASE:-http://saf-control:8080/api/v1}
         VITE_API_KEY: ${SAF_API_KEY:-mock-secret}
     container_name: saf-frontend
     depends_on:
@@ -85,7 +140,9 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
     depends_on:
       - saf-control
-      - iot-runtime
+      - client-service
+      - ville-service
+      - capteur-service
     networks:
       - saf-network
     restart: unless-stopped

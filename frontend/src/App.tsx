@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AgentsDashboard } from './app/agents/AgentsDashboard';
+import { IotCityDashboard } from './app/iot-city/IotCityDashboard';
 import actorApi from './app/agents/actorApi';
 
 function App() {
@@ -64,7 +64,7 @@ function App() {
     );
   }
 
-  return <AgentsDashboard />;
+  return <IotCityDashboard />;
 }
 
 export default App;

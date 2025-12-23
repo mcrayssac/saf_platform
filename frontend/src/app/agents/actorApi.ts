@@ -3,22 +3,26 @@
  * Frontend manages its own session and actor lifecycle
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080/api';
-const API_KEY = import.meta.env.VITE_API_KEY || 'mock-';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1';
+const API_KEY = import.meta.env.VITE_API_KEY || 'test';
 
 // Session management in localStorage
 const SESSION_KEY = 'saf_session';
 const ACTOR_ID_KEY = 'saf_actor_id';
 
 interface ActorCreateRequest {
-  type: string;
+  serviceId: string;
+  actorType: string;
   params: Record<string, any>;
 }
 
 interface ActorResponse {
   actorId: string;
-  type: string;
-  status: string;
+  actorType: string;
+  serviceId: string;
+  state: string;
+  success: boolean;
+  errorMessage?: string;
 }
 
 interface MessageRequest {
@@ -94,9 +98,12 @@ export const actorApi = {
     const sessionId = getSessionId();
     
     const request: ActorCreateRequest = {
-      type: 'CLIENT',
+      serviceId: 'client-service',
+      actorType: 'ClientActor',
       params: {
         sessionId,
+        name: `User-${sessionId.slice(-8)}`,
+        email: `user-${sessionId.slice(-8)}@saf.local`,
       },
     };
 
@@ -106,10 +113,16 @@ export const actorApi = {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to create CLIENT actor: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Failed to create CLIENT actor: ${response.statusText} - ${errorText}`);
     }
 
     const actorResponse: ActorResponse = await response.json();
+    
+    if (!actorResponse.success) {
+      throw new Error(`Failed to create CLIENT actor: ${actorResponse.errorMessage || 'Unknown error'}`);
+    }
+    
     setActorId(actorResponse.actorId);
     
     console.log('✅ Session initialized:', { sessionId, actorId: actorResponse.actorId });
@@ -134,16 +147,22 @@ export const actorApi = {
    * Send a message to an actor
    */
   sendMessage: async (actorId: string, message: MessageRequest): Promise<any> => {
-    const response = await authenticatedFetch(`${API_BASE}/actors/${actorId}/messages`, {
+    const response = await authenticatedFetch(`${API_BASE}/actors/${actorId}/tell`, {
       method: 'POST',
       body: JSON.stringify(message),
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Failed to send message: ${response.statusText} - ${errorText}`);
     }
 
-    return response.json();
+    // The tell endpoint might return void or a simple acknowledgment
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+    return { success: true };
   },
 
   /**
@@ -221,10 +240,10 @@ export const actorApi = {
   },
 
   /**
-   * Health check
+   * Health check - check saf-control health
    */
   healthCheck: async (): Promise<any> => {
-    const response = await authenticatedFetch(`${API_BASE}/actors/health`);
+    const response = await fetch(`${API_BASE.replace('/api/v1', '')}/actuator/health`);
     
     if (!response.ok) {
       throw new Error(`Health check failed: ${response.statusText}`);

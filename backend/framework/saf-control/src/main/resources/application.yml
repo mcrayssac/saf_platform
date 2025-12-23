@@ -39,3 +39,7 @@ cors:
 saf:
   security:
     api-key: ${SAF_SECURITY_API_KEY:mock-secret}
+  # Default cities initialization
+  init:
+    enabled: ${SAF_INIT_ENABLED:true}
+    delay-seconds: ${SAF_INIT_DELAY:5}

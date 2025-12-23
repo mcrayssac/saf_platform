@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: ville-service
+
+server:
+  port: 8085
+
+# SAF Control configuration
+saf-control:
+  url: ${SAF_CONTROL_URL:http://saf-control:8080}
+  service-id: ville-service
+  service-url: ${SERVICE_URL:http://ville-service:8085}
+  api-key: ${SAF_CONTROL_API_KEY:default-api-key}
+
+# Actor System Configuration
+actor:
+  system:
+    name: ville-actor-system
+    dispatcher:
+      threads: 10
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.acme.iot.ville: DEBUG
+    com.acme.saf: DEBUG
