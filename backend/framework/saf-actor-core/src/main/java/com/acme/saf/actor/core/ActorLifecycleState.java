@@ -25,6 +25,13 @@ public enum ActorLifecycleState {
     RUNNING,
     
     /**
+     * The actor is blocked and cannot process messages.
+     * Messages are queued until the actor is unblocked.
+     * This state can be used for rate limiting, backpressure, or maintenance.
+     */
+    BLOCKED,
+    
+    /**
      * The actor is restarting after a failure.
      * preRestart() and postRestart() are being executed.
      */
