@@ -3,8 +3,7 @@ package com.acme.saf.saf_runtime;
 import com.acme.saf.actor.core.*;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -78,6 +77,20 @@ public class DefaultActorSystem implements ActorSystem {
                 System.err.println("Erreur lors de l'arrêt de l'acteur " + id + ": " + e.getMessage());
                 e.printStackTrace();
             } finally {
+                // Send Terminated messages to all watchers (DeathWatch)
+                Set<ActorRef> watchersToNotify = instance.getWatchers();
+                if (!watchersToNotify.isEmpty()) {
+                    Terminated terminatedMsg = new Terminated(instance.ref);
+                    System.out.println("Sending Terminated message to " + watchersToNotify.size() + " watchers");
+                    for (ActorRef watcher : watchersToNotify) {
+                        try {
+                            watcher.tell(terminatedMsg);
+                        } catch (Exception e) {
+                            System.err.println("Failed to send Terminated to watcher " + watcher.getActorId() + ": " + e.getMessage());
+                        }
+                    }
+                }
+                
                 // Remove from registry
                 actors.remove(id);
             }
@@ -204,6 +217,8 @@ public class DefaultActorSystem implements ActorSystem {
         final Actor actor;
         final ActorRefImpl ref;
         volatile ActorLifecycleState state;
+        final Set<ActorRef> watchers = ConcurrentHashMap.newKeySet();
+        SupervisorStrategy supervisorStrategy = new OneForOneStrategy();
 
         ActorInstance(Actor actor, ActorRefImpl ref) {
             this.actor = actor;
@@ -217,6 +232,18 @@ public class DefaultActorSystem implements ActorSystem {
         
         synchronized ActorLifecycleState getState() {
             return this.state;
+        }
+        
+        void addWatcher(ActorRef watcher) {
+            watchers.add(watcher);
+        }
+        
+        void removeWatcher(ActorRef watcher) {
+            watchers.remove(watcher);
+        }
+        
+        Set<ActorRef> getWatchers() {
+            return new HashSet<>(watchers);
         }
     }
 
@@ -292,6 +319,24 @@ public class DefaultActorSystem implements ActorSystem {
         @Override
         public ActorLifecycleState getState() {
             return system.getActorState(id);
+        }
+        
+        @Override
+        public void watch(ActorRef watcher) {
+            ActorInstance instance = system.actors.get(id);
+            if (instance != null) {
+                instance.addWatcher(watcher);
+                System.out.println("Actor " + watcher.getActorId() + " is now watching " + id);
+            }
+        }
+        
+        @Override
+        public void unwatch(ActorRef watcher) {
+            ActorInstance instance = system.actors.get(id);
+            if (instance != null) {
+                instance.removeWatcher(watcher);
+                System.out.println("Actor " + watcher.getActorId() + " stopped watching " + id);
+            }
         }
     }
 }

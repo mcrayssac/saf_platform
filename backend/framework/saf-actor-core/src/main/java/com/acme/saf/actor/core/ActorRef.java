@@ -111,4 +111,21 @@ public interface ActorRef {
      * @return the actor's current state
      */
     ActorLifecycleState getState();
+    
+    /**
+     * Starts watching this actor for termination.
+     * When this actor terminates, the watcher will receive a Terminated message.
+     * This is the DeathWatch pattern for monitoring actor lifecycle.
+     * 
+     * @param watcher the actor that will watch this actor
+     */
+    void watch(ActorRef watcher);
+    
+    /**
+     * Stops watching this actor for termination.
+     * The watcher will no longer receive Terminated messages when this actor stops.
+     * 
+     * @param watcher the actor that will stop watching
+     */
+    void unwatch(ActorRef watcher);
 }
