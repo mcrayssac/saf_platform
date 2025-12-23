@@ -5,10 +5,17 @@ public class DefaultActorContext implements ActorContext {
     private final Logger logger;
     private final ActorRef self;
     private ActorRef sender;
+    private final ActorLogger actorLogger;
+    private String correlationId;
 
     public DefaultActorContext(ActorRef self, Logger logger) {
+        this(self, logger, NoOpActorLogger.getInstance());
+    }
+
+    public DefaultActorContext(ActorRef self, Logger logger, ActorLogger actorLogger) {
         this.logger = logger;
         this.self = self;
+        this.actorLogger = actorLogger != null ? actorLogger : NoOpActorLogger.getInstance();
     }
 
     @Override
@@ -42,6 +49,21 @@ public class DefaultActorContext implements ActorContext {
     }
 
     @Override
+    public ActorLogger getLogger() {
+        return actorLogger;
+    }
+
+    @Override
+    public String getCorrelationId() {
+        return correlationId;
+    }
+
+    @Override
+    public void setCorrelationId(String correlationId) {
+        this.correlationId = correlationId;
+    }
+
+    @Override
     public void publishEvent(ActorLifecycleEvent event) {
         if (logger instanceof SimpleLogger simpleLogger) {
             simpleLogger.logEvent(event);
@@ -50,5 +72,3 @@ public class DefaultActorContext implements ActorContext {
         }
     }
 }
-
-
