@@ -19,3 +19,35 @@ logging:
   level:
     com.acme.iot: INFO
     com.acme.saf: INFO
+
+# IoT City Application Configuration
+iot:
+  cities:
+    predefined:
+      - name: "Paris"
+        climate:
+          meanTemperature: 15.0
+          meanPressure: 1013.25
+          meanHumidity: 65.0
+          variancePercentage: 10.0
+          
+      - name: "Lyon"
+        climate:
+          meanTemperature: 16.5
+          meanPressure: 1015.0
+          meanHumidity: 60.0
+          variancePercentage: 10.0
+          
+      - name: "Marseille"
+        climate:
+          meanTemperature: 18.0
+          meanPressure: 1012.0
+          meanHumidity: 55.0
+          variancePercentage: 12.0
+          
+      - name: "Nice"
+        climate:
+          meanTemperature: 17.5
+          meanPressure: 1014.0
+          meanHumidity: 58.0
+          variancePercentage: 8.0

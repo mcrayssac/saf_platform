@@ -1,47 +1,161 @@
 package com.acme.iot.city.actors;
 
-import com.acme.saf.actor.core.Actor;
-import com.acme.saf.actor.core.Message;
+import com.acme.iot.city.messages.CapteurDataUpdate;
+import com.acme.iot.city.messages.RegisterClient;
+import com.acme.iot.city.messages.UnregisterClient;
+import com.acme.iot.city.model.ClimateConfig;
+import com.acme.iot.city.model.ClimateReport;
+import com.acme.iot.city.model.SensorReading;
+import com.acme.saf.actor.core.*;
 
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.*;
 
 /**
- * Acteur métier représentant une Ville dans le système IoT.
- * Spécifique à l'application iot-city.
+ * Represents a city in the IoT monitoring system.
+ * 
+ * Responsibilities:
+ * - Maintain climate configuration
+ * - Track registered clients (who entered this city)
+ * - Collect sensor readings from associated capteurs
+ * - Aggregate data and broadcast climate reports every 5 seconds
  */
 public class VilleActor implements Actor {
-
-    private final Map<String, Object> params;
-    private String state = "initialized";
-
+    
+    // Configuration
+    private final String name;
+    private final ClimateConfig climateConfig;
+    private String status = "ACTIVE";
+    
+    // Runtime state
+    private final Set<ActorRef> registeredClients = ConcurrentHashMap.newKeySet();
+    private final Map<String, SensorReading> latestReadings = new ConcurrentHashMap<>();
+    
+    // Scheduler for periodic climate reports
+    private ScheduledExecutorService scheduler;
+    private ActorContext context;
+    
     public VilleActor(Map<String, Object> params) {
-        this.params = params;
+        this.name = (String) params.getOrDefault("name", "UnknownCity");
+        this.climateConfig = (ClimateConfig) params.get("climateConfig");
     }
-
+    
+    /**
+     * Sets the actor context. Called by framework after actor creation.
+     */
+    public void setContext(ActorContext context) {
+        this.context = context;
+    }
+    
     @Override
     public void preStart() {
-        System.out.println("VilleActor démarré avec params: " + params);
-        state = "running";
+        System.out.println("VilleActor started: " + name);
+        
+        // Start periodic climate report broadcasting (every 5 seconds)
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(this::broadcastClimateReport, 5, 5, TimeUnit.SECONDS);
     }
-
+    
     @Override
-    public void receive(Message message) {
+    public void receive(Message message) throws Exception {
         Object payload = message.getPayload();
-        System.out.println("VilleActor reçoit: " + payload);
-
-        if (payload instanceof String msg) {
-            if (msg.startsWith("QUERY:")) {
-                String response = "Réponse de la ville: " + msg.substring(6);
-                System.out.println(response);
-            } else {
-                System.out.println("Message traité par la ville: " + msg);
-            }
+        
+        if (payload instanceof RegisterClient req) {
+            handleRegisterClient(req);
+        }
+        else if (payload instanceof UnregisterClient req) {
+            handleUnregisterClient(req);
+        }
+        else if (payload instanceof CapteurDataUpdate update) {
+            handleCapteurDataUpdate(update);
+        }
+        else if (payload instanceof String command) {
+            handleStringCommand(command);
+        }
+        else {
+            System.out.println("VilleActor received unknown message: " + payload.getClass().getName());
         }
     }
-
+    
+    private void handleRegisterClient(RegisterClient req) {
+        registeredClients.add(req.getClientRef());
+        System.out.println("Client registered with " + name + ": " + req.getClientRef().getActorId());
+    }
+    
+    private void handleUnregisterClient(UnregisterClient req) {
+        registeredClients.remove(req.getClientRef());
+        System.out.println("Client unregistered from " + name + ": " + req.getClientRef().getActorId());
+    }
+    
+    private void handleCapteurDataUpdate(CapteurDataUpdate update) {
+        latestReadings.put(update.getCapteurId(), update.getReading());
+        System.out.println(name + " received sensor reading from " + update.getCapteurId());
+    }
+    
+    private void handleStringCommand(String command) {
+        if (command.equals("STATUS")) {
+            System.out.println(name + " status: " + status + 
+                             ", clients=" + registeredClients.size() + 
+                             ", sensors=" + latestReadings.size());
+        }
+    }
+    
+    /**
+     * Aggregate sensor data and broadcast to all registered clients.
+     * Called every 5 seconds by scheduler.
+     */
+    private void broadcastClimateReport() {
+        if (registeredClients.isEmpty() || !"ACTIVE".equals(status)) {
+            return;
+        }
+        
+        // Aggregate sensor data by type
+        Map<String, Double> aggregated = new HashMap<>();
+        Map<String, List<Double>> groupedByType = new HashMap<>();
+        
+        for (SensorReading reading : latestReadings.values()) {
+            groupedByType
+                .computeIfAbsent(reading.getSensorType(), k -> new ArrayList<>())
+                .add(reading.getValue());
+        }
+        
+        // Calculate averages
+        for (Map.Entry<String, List<Double>> entry : groupedByType.entrySet()) {
+            double avg = entry.getValue().stream()
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0.0);
+            aggregated.put(entry.getKey(), avg);
+        }
+        
+        // Create climate report
+        ClimateReport report = new ClimateReport(
+            context != null ? context.self().getActorId() : "unknown",
+            name,
+            aggregated,
+            latestReadings.size(),
+            System.currentTimeMillis()
+        );
+        
+        // Broadcast to all registered clients
+        for (ActorRef client : registeredClients) {
+            client.tell(new SimpleMessage(report), context != null ? context.self() : null);
+        }
+        
+        System.out.println(name + " broadcasted climate report to " + registeredClients.size() + " clients");
+    }
+    
     @Override
     public void postStop() {
-        System.out.println("VilleActor arrêté");
-        state = "stopped";
+        // Shutdown scheduler
+        if (scheduler != null) {
+            scheduler.shutdown();
+            try {
+                scheduler.awaitTermination(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        System.out.println("VilleActor stopped: " + name);
     }
 }

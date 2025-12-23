@@ -103,4 +103,35 @@ public interface ActorContext {
      * @param event the lifecycle event to publish
      */
     void publishEvent(ActorLifecycleEvent event);
+    
+    // WebSocket Communication
+    
+    /**
+     * Send a message to this actor's WebSocket client (if connected).
+     * The message will be automatically JSON serialized and sent to the client.
+     * This is a generic framework method - applications decide what message to send.
+     * 
+     * If no WebSocket connection exists for this actor, the message is silently ignored.
+     * 
+     * @param message The message object (will be JSON serialized)
+     */
+    void sendToWebSocket(Object message);
+    
+    /**
+     * Check if this actor has an active WebSocket connection.
+     * 
+     * @return true if a WebSocket connection exists and is open
+     */
+    boolean hasWebSocketConnection();
+    
+    // Actor Lookup (Generic Framework Feature)
+    
+    /**
+     * Look up an actor by its ID.
+     * Generic framework method - allows actors to find and communicate with each other.
+     * 
+     * @param actorId The ID of the actor to find
+     * @return ActorRef if found, null otherwise
+     */
+    ActorRef actorFor(String actorId);
 }
