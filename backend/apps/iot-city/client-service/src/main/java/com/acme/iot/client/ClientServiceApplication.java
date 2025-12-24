@@ -2,6 +2,7 @@ package com.acme.iot.client;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Client Service Application
@@ -12,6 +13,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Port: 8082
  */
 @SpringBootApplication
+@EnableScheduling
 public class ClientServiceApplication {
 
     public static void main(String[] args) {

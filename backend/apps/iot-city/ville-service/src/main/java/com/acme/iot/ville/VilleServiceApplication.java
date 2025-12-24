@@ -2,6 +2,7 @@ package com.acme.iot.ville;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Ville Microservice Application.
@@ -13,6 +14,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * - Aggregates climate data and sends reports to clients
  */
 @SpringBootApplication
+@EnableScheduling
 public class VilleServiceApplication {
     
     public static void main(String[] args) {

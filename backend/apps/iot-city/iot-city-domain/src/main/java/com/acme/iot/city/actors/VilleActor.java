@@ -36,8 +36,73 @@ public class VilleActor implements Actor {
     private ActorContext context;
     
     public VilleActor(Map<String, Object> params) {
-        this.name = (String) params.getOrDefault("name", "UnknownCity");
-        this.climateConfig = (ClimateConfig) params.get("climateConfig");
+        this.name = (String) params.getOrDefault("nom", "UnknownCity");
+        this.climateConfig = parseClimateConfig(params.get("climateConfig"));
+    }
+    
+    /**
+     * Convert a Map to ClimateConfig object.
+     * Handles JSON deserialization from REST API.
+     */
+    @SuppressWarnings("unchecked")
+    private ClimateConfig parseClimateConfig(Object configObj) {
+        if (configObj == null) {
+            // Default config
+            return new ClimateConfig(20.0, 1013.0, 60.0, 10.0);
+        }
+        
+        if (configObj instanceof ClimateConfig) {
+            return (ClimateConfig) configObj;
+        }
+        
+        if (configObj instanceof Map) {
+            Map<String, Object> map = (Map<String, Object>) configObj;
+            
+            // Try to parse from the map
+            double meanTemp = getDoubleValue(map, "meanTemperature", 20.0);
+            double meanPressure = getDoubleValue(map, "meanPressure", 1013.0);
+            double meanHumidity = getDoubleValue(map, "meanHumidity", 60.0);
+            double variance = getDoubleValue(map, "variancePercentage", 10.0);
+            
+            // Also support tempMin/tempMax format (calculate mean)
+            if (map.containsKey("tempMin") && map.containsKey("tempMax")) {
+                double tempMin = getDoubleValue(map, "tempMin", 0.0);
+                double tempMax = getDoubleValue(map, "tempMax", 30.0);
+                meanTemp = (tempMin + tempMax) / 2.0;
+            }
+            
+            if (map.containsKey("pressureMin") && map.containsKey("pressureMax")) {
+                double pressureMin = getDoubleValue(map, "pressureMin", 980.0);
+                double pressureMax = getDoubleValue(map, "pressureMax", 1040.0);
+                meanPressure = (pressureMin + pressureMax) / 2.0;
+            }
+            
+            if (map.containsKey("humidityMin") && map.containsKey("humidityMax")) {
+                double humidityMin = getDoubleValue(map, "humidityMin", 30.0);
+                double humidityMax = getDoubleValue(map, "humidityMax", 90.0);
+                meanHumidity = (humidityMin + humidityMax) / 2.0;
+            }
+            
+            return new ClimateConfig(meanTemp, meanPressure, meanHumidity, variance);
+        }
+        
+        // Default fallback
+        return new ClimateConfig(20.0, 1013.0, 60.0, 10.0);
+    }
+    
+    private double getDoubleValue(Map<String, Object> map, String key, double defaultValue) {
+        Object value = map.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
     
     /**

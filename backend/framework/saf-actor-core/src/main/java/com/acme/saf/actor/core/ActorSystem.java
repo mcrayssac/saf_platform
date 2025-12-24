@@ -1,6 +1,7 @@
 package com.acme.saf.actor.core;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * Système de gestion des acteurs.
@@ -40,4 +41,24 @@ public interface ActorSystem {
      * @return true si l'acteur existe
      */
     boolean hasActor(String id);
+    
+    /**
+     * Obtient le statut de santé d'un acteur.
+     * @param id Identifiant de l'acteur
+     * @return Statut de santé de l'acteur
+     */
+    ActorHealthStatus getActorHealth(String id);
+    
+    /**
+     * Redémarre un acteur en cas d'erreur.
+     * @param id Identifiant de l'acteur à redémarrer
+     * @return true si le restart a réussi, false sinon
+     */
+    boolean restartActor(String id);
+    
+    /**
+     * Liste tous les identifiants d'acteurs actuellement en cours d'exécution.
+     * @return Liste des IDs d'acteurs
+     */
+    List<String> getAllActorIds();
 }

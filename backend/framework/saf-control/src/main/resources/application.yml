@@ -27,11 +27,6 @@ agent:
     timeout: 60s
     check-interval: 30s
 
-# Runtime configuration
-runtime:
-  default:
-    url: ${RUNTIME_DEFAULT_URL:http://iot-runtime:8081}
-
 # CORS configuration
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:80}
@@ -39,7 +34,3 @@ cors:
 saf:
   security:
     api-key: ${SAF_SECURITY_API_KEY:mock-secret}
-  # Default cities initialization
-  init:
-    enabled: ${SAF_INIT_ENABLED:true}
-    delay-seconds: ${SAF_INIT_DELAY:5}
