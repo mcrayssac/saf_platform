@@ -40,4 +40,11 @@ public class ServiceRegistrationController {
     public ResponseEntity<Collection<ServiceRegistry.ServiceInfo>> getAllServices() {
         return ResponseEntity.ok(serviceRegistry.getAllServices());
     }
+    
+    @GetMapping("/{serviceId}/registered")
+    public ResponseEntity<Boolean> isServiceRegistered(@PathVariable String serviceId) {
+        boolean registered = serviceRegistry.isRegistered(serviceId);
+        log.debug("Service registration check: {} -> {}", serviceId, registered);
+        return ResponseEntity.ok(registered);
+    }
 }

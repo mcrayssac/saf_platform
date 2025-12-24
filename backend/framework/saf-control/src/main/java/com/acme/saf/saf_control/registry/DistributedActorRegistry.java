@@ -114,6 +114,120 @@ public class DistributedActorRegistry {
     }
     
     /**
+     * Mark all actors from a specific service as unavailable (when service goes down)
+     */
+    public int markActorsUnavailable(String serviceId) {
+        Collection<ActorRegistryEntry> serviceActors = getActorsByService(serviceId);
+        int count = 0;
+        
+        for (ActorRegistryEntry actor : serviceActors) {
+            actor.setState(ActorLifecycleState.STOPPED);
+            count++;
+        }
+        
+        if (count > 0) {
+            log.warn("Marked {} actors as unavailable for service: {}", count, serviceId);
+        }
+        
+        return count;
+    }
+    
+    /**
+     * Mark all actors from a specific service as available (when service recovers)
+     * @deprecated Use reconcileActors() instead for proper state reconciliation
+     */
+    @Deprecated
+    public int markActorsAvailable(String serviceId) {
+        Collection<ActorRegistryEntry> serviceActors = getActorsByService(serviceId);
+        int count = 0;
+        
+        for (ActorRegistryEntry actor : serviceActors) {
+            if (actor.getState() == ActorLifecycleState.STOPPED) {
+                actor.setState(ActorLifecycleState.RUNNING);
+                count++;
+            }
+        }
+        
+        if (count > 0) {
+            log.info("Marked {} actors as available for service: {}", count, serviceId);
+        }
+        
+        return count;
+    }
+    
+    /**
+     * Reconcile actors for a service with the actual actors running on that service.
+     * This removes orphaned actors that don't exist anymore and keeps only real ones.
+     * 
+     * @param serviceId The service ID
+     * @param actualActorIds The list of actor IDs actually running on the service
+     * @return Number of actors removed (orphans) and number kept
+     */
+    public ReconciliationResult reconcileActors(String serviceId, Collection<String> actualActorIds) {
+        Collection<ActorRegistryEntry> registeredActors = getActorsByService(serviceId);
+        
+        int removed = 0;
+        int kept = 0;
+        int restored = 0;
+        
+        // Remove actors that no longer exist on the service
+        for (ActorRegistryEntry actor : registeredActors) {
+            if (!actualActorIds.contains(actor.getActorId())) {
+                // Actor doesn't exist anymore - remove it
+                registry.remove(actor.getActorId());
+                removed++;
+                log.warn("Removed orphaned actor {} from registry (no longer exists on service {})", 
+                        actor.getActorId(), serviceId);
+            } else {
+                // Actor exists - mark it as RUNNING if it was STOPPED
+                if (actor.getState() == ActorLifecycleState.STOPPED) {
+                    actor.setState(ActorLifecycleState.RUNNING);
+                    restored++;
+                    log.info("Restored actor {} to RUNNING state", actor.getActorId());
+                } else {
+                    kept++;
+                }
+            }
+        }
+        
+        log.info("Reconciliation for service {}: {} removed (orphans), {} restored, {} kept", 
+                serviceId, removed, restored, kept);
+        
+        return new ReconciliationResult(removed, restored, kept);
+    }
+    
+    /**
+     * Result of a reconciliation operation
+     */
+    public static class ReconciliationResult {
+        private final int removed;
+        private final int restored;
+        private final int kept;
+        
+        public ReconciliationResult(int removed, int restored, int kept) {
+            this.removed = removed;
+            this.restored = restored;
+            this.kept = kept;
+        }
+        
+        public int getRemoved() {
+            return removed;
+        }
+        
+        public int getRestored() {
+            return restored;
+        }
+        
+        public int getKept() {
+            return kept;
+        }
+        
+        public int getTotal() {
+            return restored + kept;
+        }
+    }
+    
+    /**
      * Clear the entire registry (use with caution!)
      */
     public void clear() {

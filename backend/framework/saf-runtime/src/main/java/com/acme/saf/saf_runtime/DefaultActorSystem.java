@@ -164,6 +164,51 @@ public class DefaultActorSystem implements ActorSystem {
     public boolean hasActor(String id) {
         return actors.containsKey(id);
     }
+    
+    @Override
+    public ActorHealthStatus getActorHealth(String id) {
+        ActorInstance instance = actors.get(id);
+        
+        if (instance == null) {
+            return ActorHealthStatus.notFound(id);
+        }
+        
+        ActorLifecycleState state = instance.getState();
+        int queueSize = mailbox.size();
+        long lastProcessedAt = System.currentTimeMillis(); // TODO: track actual last message time
+        
+        // Actor is healthy if it's in RUNNING state
+        boolean healthy = (state == ActorLifecycleState.RUNNING);
+        
+        if (healthy) {
+            return ActorHealthStatus.healthy(id, state, lastProcessedAt, queueSize);
+        } else {
+            String errorMsg = "Actor in state: " + state;
+            return ActorHealthStatus.unhealthy(id, state, errorMsg);
+        }
+    }
+    
+    @Override
+    public boolean restartActor(String id) {
+        ActorInstance instance = actors.get(id);
+        if (instance == null) {
+            System.err.println("Cannot restart unknown actor: " + id);
+            return false;
+        }
+        
+        try {
+            restartActor(id, new RuntimeException("Manual restart requested"));
+            return true;
+        } catch (Exception e) {
+            System.err.println("Failed to restart actor " + id + ": " + e.getMessage());
+            return false;
+        }
+    }
+    
+    @Override
+    public List<String> getAllActorIds() {
+        return new ArrayList<>(actors.keySet());
+    }
 
     void processMessage(String actorId, Message message, ActorRef sender, CompletableFuture<Object> responseFuture) {
         ActorInstance instance = actors.get(actorId);
@@ -193,10 +238,35 @@ public class DefaultActorSystem implements ActorSystem {
             try {
                 instance.actor.receive(next);
             } catch (Exception e) {
-                // On error, transition to FAILED state and consider auto-restart (for future supervision)
-                instance.setState(ActorLifecycleState.FAILED);
+                // Apply supervision strategy
                 System.err.println("[DISPATCHER] Erreur lors du traitement pour acteur " + actorId + ": " + e.getMessage());
                 e.printStackTrace();
+                
+                SupervisorStrategy strategy = instance.supervisorStrategy;
+                SupervisorStrategy.Directive directive = strategy.decide(instance.ref, e, next);
+                
+                System.out.println("[SUPERVISION] Applying directive " + directive + " for actor " + actorId);
+                
+                switch (directive) {
+                    case RESTART:
+                        System.out.println("[SUPERVISION] Restarting actor " + actorId);
+                        restartActor(actorId, e);
+                        break;
+                    case RESUME:
+                        System.out.println("[SUPERVISION] Resuming actor " + actorId + " - discarding failed message");
+                        // Actor stays in RUNNING state, just continue with next message
+                        break;
+                    case STOP:
+                        System.out.println("[SUPERVISION] Stopping actor " + actorId);
+                        stop(actorId);
+                        break;
+                    case ESCALATE:
+                        // For now, just log - hierarchical supervision not yet implemented
+                        System.err.println("[SUPERVISION] Escalation not yet implemented for actor " + actorId + " - stopping actor");
+                        instance.setState(ActorLifecycleState.FAILED);
+                        stop(actorId);
+                        break;
+                }
                 
                 if (responseFuture != null) {
                     responseFuture.completeExceptionally(e);

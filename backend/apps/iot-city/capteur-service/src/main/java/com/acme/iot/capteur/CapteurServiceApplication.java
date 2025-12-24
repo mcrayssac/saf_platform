@@ -2,6 +2,7 @@ package com.acme.iot.capteur;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Capteur Service Application
@@ -12,6 +13,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Port: 8086
  */
 @SpringBootApplication
+@EnableScheduling
 public class CapteurServiceApplication {
 
     public static void main(String[] args) {

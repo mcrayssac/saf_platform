@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ServiceRegistry {
     
     private final Map<String, ServiceInfo> services = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> initializedServices = new ConcurrentHashMap<>();
     
     /**
      * Register a service
@@ -64,6 +65,28 @@ public class ServiceRegistry {
      */
     public boolean isRegistered(String serviceId) {
         return services.containsKey(serviceId);
+    }
+    
+    /**
+     * Check if this is the first instance of a service type being registered
+     */
+    public boolean isFirstInstanceOfService(String serviceId) {
+        return !initializedServices.containsKey(serviceId);
+    }
+    
+    /**
+     * Mark a service type as initialized
+     */
+    public void markServiceAsInitialized(String serviceId) {
+        initializedServices.put(serviceId, true);
+        log.info("Service type marked as initialized: {}", serviceId);
+    }
+    
+    /**
+     * Check if a service type has been initialized
+     */
+    public boolean isServiceInitialized(String serviceId) {
+        return initializedServices.getOrDefault(serviceId, false);
     }
     
     /**
