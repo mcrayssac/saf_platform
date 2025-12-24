@@ -5,6 +5,7 @@ import com.acme.saf.saf_runtime.controller.BaseActorRuntimeController;
 import com.acme.iot.ville.actor.HttpVilleActorFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestMapping;
 
 /**
  * Actor runtime controller for ville-service.
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @Slf4j
 @RestController
+@RequestMapping("/runtime")
 public class ActorRuntimeController extends BaseActorRuntimeController {
     
     public ActorRuntimeController(ActorSystem actorSystem, HttpVilleActorFactory actorFactory) {
