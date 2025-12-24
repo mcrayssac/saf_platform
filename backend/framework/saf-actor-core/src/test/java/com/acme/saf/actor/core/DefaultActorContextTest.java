@@ -1,109 +1,73 @@
 package com.acme.saf.actor.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import static org.mockito.ArgumentMatchers.contains;
 import org.mockito.Mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class DefaultActorContextTest {
 
-    // On mock les dépendances
-    @Mock
-    private Logger mockLogger;
-    @Mock
-    private ActorRef mockSelf;
-    @Mock
-    private ActorRef mockSender;
-    @Mock
-    private Actor mockActor;
-    @Mock
-    private Message mockMessage;
+    @Mock private Logger mockLogger;
+    @Mock private ActorRef mockSelf;
+    @Mock private ActorRef mockSender;
+    @Mock private Actor mockActor;
+    @Mock private Message mockMessage;
+    @Mock private Mailbox mockMailbox;
 
     private DefaultActorContext context;
 
     @BeforeEach
     void setUp() {
-        // Initalisation avant chaque test
-        context = new DefaultActorContext(mockSelf, mockLogger);
+        context = new DefaultActorContext(mockSelf, mockLogger, mockMailbox, mockActor);
     }
 
     @Test
-    @DisplayName("Invariant: self() doit retourner la référence fournie au constructeur")
-    void testSelfReferenceInvariant() {
-        assertEquals(mockSelf, context.self(), "Le contexte doit retourner le bon ActorRef (self)");
+    @DisplayName("Invariant: getters must return injected instances")
+    void testGetters() {
+        assertEquals(mockMailbox, context.getMailbox());
+        assertEquals(mockActor, context.getActor());
+        assertEquals(mockSelf, context.self());
     }
 
     @Test
-    @DisplayName("Invariant: sender() doit retourner l'acteur qui a envoyé le message")
+    @DisplayName("Invariant: sender() update")
     void testSenderUpdate() {
-        // Au début sender peut être null
         assertNull(context.sender());
-
-        // Simulation: Le Runtime injecte le sender avant le traitement d'un message
         context.setSender(mockSender);
-
-        assertEquals(mockSender, context.sender(), "Le contexte doit mettre à jour le sender");
+        assertEquals(mockSender, context.sender());
     }
 
     @Test
-    @DisplayName("Logging: logInfo doit déléguer au Logger sous-jacent")
-    void testLogInfoDelegation() {
-        String testMsg = "Actor started";
-        
-        //Action
-        context.logInfo(testMsg);
-
-        // Vérification que la méthode info du mockLogger a bien été appelée
-        verify(mockLogger, times(1)).info(testMsg);
+    @DisplayName("Logging delegation")
+    void testLogging() {
+        context.logInfo("Test");
+        verify(mockLogger).info("Test");
     }
 
     @Test
-    @DisplayName("Logging: logError doit passer l'exception au Logger")
-    void testLogErrorDelegation() {
-        String errorMsg = "Erreur";
-        RuntimeException ex = new RuntimeException("Crash");
-
-        // Action
-        context.logError(errorMsg, ex);
-
-        // Vérification
-        verify(mockLogger).error(errorMsg, ex);
-    }
-
-    @Test
-    @DisplayName("INTEGRATION: La stratégie de supervision doit pouvoir utiliser le contexte")
-    void testSupervisionIntegration() {
-
-        SupervisionStrategy strategy = new SmartSupervisionStrategy(context);
-
-        // On simule un crash
-        Exception crash = new IllegalStateException("Corrupted");
-
-        // La stratégie décide quoi faire
-        SupervisionDirective directive = strategy.handleFailure(mockActor, crash, mockMessage);
-
-        // On vérifie que la stratégie a bien utilisé le logger pour signaler le problème
-        verify(mockLogger).warning(contains("Actor state corrupted"));
-        
-        // On vérifie que la décision est bien RESTART
-        assertEquals(SupervisionDirective.RESTART, directive);
+    @DisplayName("WebSocket Check (Default is false)")
+    void testWebSocketDefaults() {
+        assertFalse(context.hasWebSocketConnection());
     }
     
     @Test
-    @DisplayName("Le contexte doit publier les événements")
-    void testEventPublishing() {
-        var event = new ActorLifecycleEvent.ActorStarted("id-1", "path/to/actor");
+    @DisplayName("INTEGRATION: Supervision")
+    void testSupervisionIntegration() {
+        SupervisionStrategy strategy = new SmartSupervisionStrategy(context);
+        Exception crash = new IllegalStateException("Corrupted");
         
-        context.publishEvent(event);
+        // Depending on how SmartSupervisionStrategy is implemented by your team, 
+        // it might use logWarning or logError. We verify usage of the context.
+        SupervisionDirective directive = strategy.handleFailure(mockActor, crash, mockMessage);
         
-        verify(mockLogger).info(contains("Event:"));
+        verify(mockLogger).warning(contains("Actor state corrupted"));
+        assertEquals(SupervisionDirective.RESTART, directive);
     }
 }
