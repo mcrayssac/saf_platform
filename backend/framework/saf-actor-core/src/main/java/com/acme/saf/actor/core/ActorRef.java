@@ -78,8 +78,54 @@ public interface ActorRef {
     boolean isActive();
     
     /**
-     * Stops the actor gracefully.
-     * The actor will process remaining messages in its mailbox before stopping.
+     * Stops the actor.
+     * The actor will be removed from the system and can no longer process messages.
      */
     void stop();
+    
+    /**
+     * Blocks the actor from processing messages.
+     * Messages sent to a blocked actor will be queued.
+     * The actor can be unblocked later.
+     */
+    void block();
+    
+    /**
+     * Unblocks a blocked actor.
+     * The actor will resume processing queued messages.
+     */
+    void unblock();
+    
+    /**
+     * Restarts the actor.
+     * Triggers preRestart() and postRestart() lifecycle callbacks.
+     * The actor's mailbox is preserved.
+     * 
+     * @param cause the reason for the restart
+     */
+    void restart(Throwable cause);
+    
+    /**
+     * Gets the current lifecycle state of the actor.
+     * 
+     * @return the actor's current state
+     */
+    ActorLifecycleState getState();
+    
+    /**
+     * Starts watching this actor for termination.
+     * When this actor terminates, the watcher will receive a Terminated message.
+     * This is the DeathWatch pattern for monitoring actor lifecycle.
+     * 
+     * @param watcher the actor that will watch this actor
+     */
+    void watch(ActorRef watcher);
+    
+    /**
+     * Stops watching this actor for termination.
+     * The watcher will no longer receive Terminated messages when this actor stops.
+     * 
+     * @param watcher the actor that will stop watching
+     */
+    void unwatch(ActorRef watcher);
 }

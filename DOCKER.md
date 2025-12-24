@@ -33,11 +33,11 @@ docker-compose up -d
 ```
 
 This command will:
-- Build the backend Docker image (Spring Boot with Java 21)
-- Build the runtime Docker image (Spring Boot with Java 21)
+- Build the SAF-Control Docker image (Spring Boot with Java 21)
+- Build the IoT City microservices Docker images (client-service, ville-service, capteur-service)
 - Build the frontend Docker image (React with Nginx)
-- Start the backend service
-- Start the runtime service
+- Start SAF-Control (orchestrator and API gateway)
+- Start the 3 IoT City microservices (each hosting their specific actors)
 - Start the frontend service
 - Start Prometheus for metrics scraping
 
@@ -54,12 +54,15 @@ All services should show as "healthy" after initialization.
 ### 4. Access the Application
 
 - **Frontend**: http://localhost
-- **Backend API**: http://localhost:8080
-- **Runtime API**: http://localhost:8081
+- **SAF-Control API**: http://localhost:8080
+- **Client service**: http://localhost:8082
+- **Ville service**: http://localhost:8083
+- **Capteur service**: http://localhost:8084
 - **Swagger UI**: http://localhost:8080/swagger
 - **Health Check**: http://localhost:8080/actuator/health
-- **Runtime Health Check**: http://localhost:8081/actuator/health
 - **Prometheus UI**: http://localhost:9090
+
+**Note**: The 3 default cities (Paris, Lyon, Marseille) with their sensors are automatically created on startup.
 
 ## Service Architecture
 
@@ -76,22 +79,40 @@ All services should show as "healthy" after initialization.
          │
          │ /api/* → proxy
          ▼
-┌─────────────────┐
-│     Backend     │  (Port 8080)
-│  (Spring Boot)  │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│     Runtime     │  (Port 8081)
-│  (Spring Boot)  │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│   Prometheus    │  (Port 9090)
-└─────────────────┘
+┌─────────────────────────────────────────┐
+│           SAF-Control (Port 8080)       │
+│    (Orchestrator & API Gateway)         │
+│  - Distributed Actor Registry           │
+│  - Service Discovery                    │
+│  - Actor Creation & Management          │
+│  - Default City Initialization          │
+└──────────┬──────────────────────────────┘
+           │
+           │ HTTP calls to create/manage actors
+           │
+           ├──────────┬──────────┬──────────┐
+           ▼          ▼          ▼          ▼
+    ┌──────────┐ ┌──────────┐ ┌──────────┐
+    │ client-  │ │  ville-  │ │ capteur- │
+    │ service  │ │ service  │ │ service  │
+    │ :8082    │ │ :8083    │ │ :8084    │
+    │          │ │          │ │          │
+    │ Client   │ │ Ville    │ │ Capteur  │
+    │ Actors   │ │ Actors   │ │ Actors   │
+    └──────────┘ └──────────┘ └──────────┘
+           │          │          │
+           └──────────┴──────────┴──────────┐
+                                            ▼
+                                   ┌─────────────────┐
+                                   │   Prometheus    │
+                                   │   (Port 9090)   │
+                                   └─────────────────┘
 ```
+
+**Architecture Notes**:
+- **SAF-Control** is the central orchestrator that manages all actor microservices
+- Each **IoT microservice** hosts specific actor types using SAF-Runtime base classes
+- Actors communicate via HTTP through SAF-Control's routing layer
 
 ## Docker Compose Commands
 
@@ -105,7 +126,10 @@ docker-compose up -d
 docker-compose up
 
 # Start specific service
-docker-compose up -d backend
+docker-compose up -d saf-control
+docker-compose up -d client-service
+docker-compose up -d ville-service
+docker-compose up -d capteur-service
 ```
 
 ### Stop Services
@@ -128,7 +152,8 @@ docker-compose logs
 docker-compose logs -f
 
 # View logs for specific service
-docker-compose logs -f backend
+docker-compose logs -f saf-control
+docker-compose logs -f ville-service
 docker-compose logs -f frontend
 ```
 
@@ -139,7 +164,8 @@ docker-compose logs -f frontend
 docker-compose restart
 
 # Restart specific service
-docker-compose restart backend
+docker-compose restart saf-control
+docker-compose restart client-service
 ```
 
 ### Rebuild Images
@@ -149,7 +175,8 @@ docker-compose restart backend
 docker-compose build
 
 # Rebuild specific service
-docker-compose build backend
+docker-compose build saf-control
+docker-compose build client-service
 
 # Rebuild and start
 docker-compose up -d --build
@@ -157,43 +184,94 @@ docker-compose up -d --build
 
 ## Service Details
 
-### Backend (Spring Boot)
+### SAF-Control (Spring Boot)
 
-- **Container**: `saf-backend`
+- **Container**: `saf-control`
 - **Port**: 8080
 - **Build time**: ~2-3 minutes (first build with dependency download)
 - **Startup time**: ~30-60 seconds
 - **Health Check**: `/actuator/health`
+- **Role**: Central orchestrator and API gateway
+- **Responsibilities**:
+  - Distributed actor registry
+  - Service discovery
+  - Actor creation/management via HTTP
+  - Default city initialization (3 cities + sensors)
+  - API authentication
 - **Environment Variables**:
   - `SPRING_PROFILES_ACTIVE`: Spring profile (default: prod)
   - `SAF_SECURITY_API_KEY`: API key for authentication
+  - `SAF_INIT_ENABLED`: Enable/disable default cities initialization (default: true)
+  - `SAF_INIT_DELAY`: Delay before initialization in seconds (default: 5)
   - `JAVA_OPTS`: JVM options (default: -Xmx512m -Xms256m)
 
-### Runtime (Spring Boot)
+### Client Service (Spring Boot)
 
-- **Container**: `saf-runtime`
-- **Port**: 8081
-- **Build time**: ~2-3 minutes (first build with dependency download)
-- **Startup time**: ~30-60 seconds
+- **Container**: `client-service`
+- **Port**: 8082
+- **Role**: Hosts ClientActor instances
 - **Health Check**: `/actuator/health`
-- **Environment Variables**:
-  - `SPRING_PROFILES_ACTIVE`: Spring profile (default: prod)
-  - `JAVA_OPTS`: JVM options (default: -Xmx512m -Xms256m)
+- **Actors**: Each ClientActor represents a user/client subscribing to city climate updates
+
+### Ville Service (Spring Boot)
+
+- **Container**: `ville-service`
+- **Port**: 8083
+- **Role**: Hosts VilleActor instances
+- **Health Check**: `/actuator/health`
+- **Actors**: Each VilleActor represents a city that aggregates sensor data
+- **Default Cities**: Paris, Lyon, Marseille (auto-created on startup)
+
+### Capteur Service (Spring Boot)
+
+- **Container**: `capteur-service`
+- **Port**: 8084
+- **Role**: Hosts CapteurActor instances
+- **Health Check**: `/actuator/health`
+- **Actors**: Each CapteurActor represents a sensor (temperature, humidity, pressure)
+- **Default Sensors**: 3 sensors per city (9 total, auto-created on startup)
 
 ### Frontend (React + Nginx)
 
 - **Container**: `saf-frontend`
 - **Port**: 80
 - **Build time**: ~2-3 minutes (first build with npm install)
-- **Proxy**: API requests to `/api/*` are proxied to backend at `http://backend:8080`
+- **Proxy**: API requests to `/api/*` are proxied to SAF-Control at `http://saf-control:8080`
 - **Health Check**: Root endpoint `/`
 - **Features**:
   - Gzip compression enabled
   - Static asset caching
   - SPA routing support
   - Security headers
+  - Dark/Light theme support
 
 ## Platform Notes
+
+### Microservices Architecture
+
+The platform implements a **true microservices architecture** where:
+
+1. **Each actor type lives in its own microservice**:
+   - ClientActor → client-service
+   - VilleActor → ville-service
+   - CapteurActor → capteur-service
+
+2. **SAF-Runtime is now a library**, not a service:
+   - Embedded in each microservice via `saf-runtime` dependency
+   - Provides base classes (`BaseActorRuntimeController`, `ActorSystemConfiguration`)
+
+3. **SAF-Control orchestrates everything**:
+   - Maintains distributed actor registry
+   - Routes actor creation requests to appropriate microservices
+   - Initializes default configuration (3 cities + sensors)
+
+### Default Initialization
+
+On startup, SAF-Control automatically creates:
+- **3 Cities**: Paris, Lyon, Marseille (via ville-service)
+- **9 Sensors**: 3 per city (temperature, humidity, pressure via capteur-service)
+
+This can be disabled by setting `SAF_INIT_ENABLED=false` in the environment.
 
 ### ARM64 / Apple Silicon Support
 
@@ -226,7 +304,7 @@ If ports 80 or 8080 are already in use, modify them in `docker-compose.yml`:
 
 ```yaml
 services:
-  backend:
+  saf-control:
     ports:
       - "8081:8080"  # Change host port to 8081
   frontend:
@@ -234,17 +312,33 @@ services:
       - "8000:80"    # Change host port to 8000
 ```
 
-### Backend Health Check Failing
+### SAF-Control Health Check Failing
 
-The backend can take 30-60 seconds to fully initialize on first start. Wait and check:
+SAF-Control can take 30-60 seconds to fully initialize on first start. Wait and check:
 
 ```bash
-# Watch backend logs
-docker-compose logs -f backend
+# Watch SAF-Control logs
+docker-compose logs -f saf-control
 
 # Check health directly
 curl http://localhost:8080/actuator/health
+
+# Check initialization logs
+docker-compose logs saf-control | grep DefaultCityInitializer
 ```
+
+### Default Cities Not Created
+
+Check the initialization logs:
+
+```bash
+docker-compose logs saf-control | grep -E "Initializing|Creating|Created"
+```
+
+If initialization failed, ensure:
+1. All microservices are running and healthy
+2. Services have registered with SAF-Control
+3. Wait at least 10 seconds after startup
 
 ### Frontend Build Fails
 
@@ -278,7 +372,7 @@ docker-compose up -d --build
 All API requests (except public endpoints) require the `X-API-KEY` header:
 
 ```bash
-curl -H "X-API-KEY: your-api-key-here" http://localhost:8080/api/agents
+curl -H "X-API-KEY: your-api-key-here" http://localhost:8080/api/v1/actors
 ```
 
 Public endpoints (no authentication required):
@@ -293,11 +387,17 @@ Public endpoints (no authentication required):
 Check service health:
 
 ```bash
-# Backend health
+# SAF-Control health
 curl http://localhost:8080/actuator/health
 
-# Runtime health
-curl http://localhost:8081/actuator/health
+# Client service health
+curl http://localhost:8082/actuator/health
+
+# Ville service health
+curl http://localhost:8083/actuator/health
+
+# Capteur service health
+curl http://localhost:8084/actuator/health
 
 # Frontend (returns 200 if healthy)
 curl -I http://localhost/
@@ -309,9 +409,12 @@ docker-compose ps
 ### Metrics
 
 Prometheus metrics available at:
-- http://localhost:8081/actuator/prometheus
+- SAF-Control: http://localhost:8080/actuator/prometheus
+- Client service: http://localhost:8082/actuator/prometheus
+- Ville service: http://localhost:8083/actuator/prometheus
+- Capteur service: http://localhost:8084/actuator/prometheus
 
-Prometheus UI (scraping saf-runtime):
+Prometheus UI (scraping all services):
 - http://localhost:9090
 
 ### Container Stats
@@ -329,9 +432,21 @@ docker stats
 For local development with hot reload, run services separately:
 
 ```bash
-# Backend
-cd backend/services/saf-control
+# SAF-Control
+cd backend/framework/saf-control
 ./mvnw spring-boot:run
+
+# Client service
+cd backend/apps/iot-city/client-service
+mvn spring-boot:run
+
+# Ville service
+cd backend/apps/iot-city/ville-service
+mvn spring-boot:run
+
+# Capteur service
+cd backend/apps/iot-city/capteur-service
+mvn spring-boot:run
 
 # Frontend
 cd frontend
@@ -347,10 +462,11 @@ Use Docker Compose for production deployment:
 3. Set appropriate resource limits
 4. Enable monitoring and logging
 5. Use external database if needed
+6. Consider disabling default initialization: `SAF_INIT_ENABLED=false`
 
 ## Network Configuration
 
-All services run in the `saf-network` bridge network, allowing them to communicate using service names as hostnames (e.g., `backend`, `frontend`).
+All services run in the `saf-network` bridge network, allowing them to communicate using service names as hostnames (e.g., `saf-control`, `ville-service`, `frontend`).
 
 ## Resource Requirements
 
@@ -387,8 +503,8 @@ docker-compose down
 # View logs
 docker-compose logs -f
 
-# Restart service
-docker-compose restart backend
+# Restart SAF-Control
+docker-compose restart saf-control
 
 # Rebuild and restart
 docker-compose up -d --build
@@ -396,11 +512,11 @@ docker-compose up -d --build
 # Check status
 docker-compose ps
 
-# Execute command in container
-docker-compose exec backend sh
+# Execute command in SAF-Control container
+docker-compose exec saf-control sh
 
-# View backend logs
-docker-compose logs -f backend
+# View SAF-Control logs
+docker-compose logs -f saf-control
 
 # View resource usage
 docker stats
@@ -435,3 +551,4 @@ For issues or questions:
 - Check resources: `docker stats`
 - Review this documentation
 - Check application logs in containers
+- Verify service registration: `curl http://localhost:8080/api/v1/services`

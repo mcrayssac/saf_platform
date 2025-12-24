@@ -5,6 +5,7 @@ frontend/node_modules/
 # Build outputs
 dist/
 build/
+target/
 frontend/dist/
 frontend/build/
 
@@ -122,3 +123,8 @@ temp/
 .project
 .classpath
 .settings/
+
+# Markdown files instead of README and DOCKER
+*.md
+!README.md
+!DOCKER.md

@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: client-service
+
+server:
+  port: 8084
+
+# SAF Control configuration
+saf-control:
+  url: ${SAF_CONTROL_URL:http://saf-control:8080}
+  service-id: client-service
+  service-url: ${SERVICE_URL:http://client-service:8084}
+  api-key: ${SAF_CONTROL_API_KEY:default-api-key}
+
+# Actor System Configuration
+actor:
+  system:
+    name: client-actor-system
+    dispatcher:
+      threads: 10
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.acme.iot.client: DEBUG
+    com.acme.saf: DEBUG
