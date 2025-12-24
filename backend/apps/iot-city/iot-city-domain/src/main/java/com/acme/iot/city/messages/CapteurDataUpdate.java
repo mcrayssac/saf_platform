@@ -7,8 +7,12 @@ import com.acme.iot.city.model.SensorReading;
  * VilleActor aggregates these readings for climate reports.
  */
 public class CapteurDataUpdate {
-    private final String capteurId;
-    private final SensorReading reading;
+    private String capteurId;
+    private SensorReading reading;
+    
+    public CapteurDataUpdate() {
+        // Default constructor for Jackson deserialization
+    }
     
     public CapteurDataUpdate(String capteurId, SensorReading reading) {
         this.capteurId = capteurId;
@@ -19,8 +23,16 @@ public class CapteurDataUpdate {
         return capteurId;
     }
     
+    public void setCapteurId(String capteurId) {
+        this.capteurId = capteurId;
+    }
+    
     public SensorReading getReading() {
         return reading;
+    }
+    
+    public void setReading(SensorReading reading) {
+        this.reading = reading;
     }
     
     @Override

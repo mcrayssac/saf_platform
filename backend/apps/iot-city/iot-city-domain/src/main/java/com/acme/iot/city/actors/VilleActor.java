@@ -7,6 +7,7 @@ import com.acme.iot.city.model.ClimateConfig;
 import com.acme.iot.city.model.ClimateReport;
 import com.acme.iot.city.model.SensorReading;
 import com.acme.saf.actor.core.*;
+import com.acme.saf.saf_runtime.messaging.*;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -19,6 +20,7 @@ import java.util.concurrent.*;
  * - Track registered clients (who entered this city)
  * - Collect sensor readings from associated capteurs
  * - Aggregate data and broadcast climate reports every 5 seconds
+ * - Receive sensor readings from other pods via inter-pod messaging
  */
 public class VilleActor implements Actor {
     
@@ -35,6 +37,11 @@ public class VilleActor implements Actor {
     private ScheduledExecutorService scheduler;
     private ActorContext context;
     
+    // Inter-pod messaging
+    private InterPodMessaging interPodMessaging;
+    private MessageConsumer consumer;
+    private static final String SENSOR_READINGS_TOPIC = "iot-city-sensor-readings";
+    
     public VilleActor(Map<String, Object> params) {
         this.name = (String) params.getOrDefault("name", "UnknownCity");
         this.climateConfig = (ClimateConfig) params.get("climateConfig");
@@ -50,6 +57,39 @@ public class VilleActor implements Actor {
     @Override
     public void preStart() {
         System.out.println("VilleActor started: " + name);
+        
+        // Initialize inter-pod messaging system (only once, reuse if already initialized)
+        try {
+            // Try to get existing instance first
+            try {
+                this.interPodMessaging = InterPodMessaging.getInstance();
+                System.out.println("VilleActor: Reusing existing InterPodMessaging instance");
+            } catch (IllegalStateException e) {
+                // Not initialized yet, initialize it
+                System.out.println("VilleActor: Initializing new InterPodMessaging instance");
+                MessagingConfiguration config = new MessagingConfiguration();
+                this.interPodMessaging = config.initializeMessaging();
+            }
+            
+            this.consumer = interPodMessaging.getConsumer();
+            
+            // Subscribe to sensor readings from other pods
+            consumer.subscribe(
+                CapteurDataUpdate.class.getName(),
+                CapteurDataUpdate.class,
+                update -> {
+                    System.out.println(name + " received inter-pod sensor reading from " + update.getCapteurId());
+                    latestReadings.put(update.getCapteurId(), update.getReading());
+                }
+            );
+            
+            // Start listening to sensor readings topic
+            consumer.listen(SENSOR_READINGS_TOPIC);
+            System.out.println("VilleActor: Inter-pod messaging initialized and listening on " + SENSOR_READINGS_TOPIC);
+        } catch (Exception e) {
+            System.err.println("VilleActor: Failed to initialize messaging - " + e.getMessage());
+            this.interPodMessaging = null;
+        }
         
         // Start periodic climate report broadcasting (every 5 seconds)
         scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -156,6 +196,17 @@ public class VilleActor implements Actor {
                 Thread.currentThread().interrupt();
             }
         }
+        
+        // Shutdown inter-pod messaging
+        if (interPodMessaging != null) {
+            try {
+                interPodMessaging.shutdown();
+                System.out.println("VilleActor: Inter-pod messaging shutdown");
+            } catch (Exception e) {
+                System.err.println("VilleActor: Error shutting down messaging - " + e.getMessage());
+            }
+        }
+        
         System.out.println("VilleActor stopped: " + name);
     }
 }
