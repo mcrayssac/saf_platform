@@ -134,4 +134,8 @@ public interface ActorContext {
      * @return ActorRef if found, null otherwise
      */
     ActorRef actorFor(String actorId);
+
+    Mailbox getMailbox();
+    
+    Actor getActor();
 }
