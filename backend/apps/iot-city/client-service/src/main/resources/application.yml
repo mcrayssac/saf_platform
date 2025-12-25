@@ -1,6 +1,13 @@
 spring:
   application:
     name: client-service
+  kafka:
+    bootstrap-servers: saf-kafka:9092
+    consumer:
+      group-id: client-climate-listener
+      auto-offset-reset: latest
+    producer:
+      bootstrap-servers: saf-kafka:9092
 
 server:
   port: 8084

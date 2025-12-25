@@ -41,6 +41,13 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Kafka for inter-pod messaging -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>3.6.0</version>
+        </dependency>
+
         <!-- SLF4J for logging (interface only) -->
         <dependency>
             <groupId>org.slf4j</groupId>
