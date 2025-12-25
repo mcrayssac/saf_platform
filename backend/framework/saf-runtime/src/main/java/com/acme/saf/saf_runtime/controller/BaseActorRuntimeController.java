@@ -35,6 +35,11 @@ public abstract class BaseActorRuntimeController {
         log.info("[{}] Creating actor: type={}, id={}", serviceName, command.getActorType(), command.getActorId());
         
         try {
+            // Add actorId to params so factory implementations can use it
+            if (command.getParams() != null && command.getActorId() != null) {
+                command.getParams().put("actorId", command.getActorId());
+            }
+            
             // Use ActorSystem spawn with parameters
             ActorRef actorRef = actorSystem.spawn(command.getActorType(), command.getParams());
             

@@ -29,6 +29,13 @@
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
         
+        <!-- Jackson for Java 8 date/time support -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>2.16.0</version>
+        </dependency>
+        
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

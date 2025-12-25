@@ -3,6 +3,7 @@ package com.acme.iot.city.actors;
 import com.acme.iot.city.messages.CapteurDataUpdate;
 import com.acme.iot.city.messages.RegisterClient;
 import com.acme.iot.city.messages.UnregisterClient;
+import com.acme.iot.city.messages.WeatherRequest;
 import com.acme.iot.city.model.ClimateConfig;
 import com.acme.iot.city.model.ClimateReport;
 import com.acme.iot.city.model.SensorReading;
@@ -25,13 +26,15 @@ import java.util.concurrent.*;
 public class VilleActor implements Actor {
     
     // Configuration
+    private final String actorId;     // paris, lyon, etc
     private final String name;
     private final ClimateConfig climateConfig;
     private String status = "ACTIVE";
     
     // Runtime state
-    private final Set<ActorRef> registeredClients = ConcurrentHashMap.newKeySet();
+    private final Map<String, ActorRef> registeredClients = new ConcurrentHashMap<>();
     private final Map<String, SensorReading> latestReadings = new ConcurrentHashMap<>();
+    private final Map<String, ActorRef> sensors = new ConcurrentHashMap<>();  // Store sensor references
     
     // Scheduler for periodic climate reports
     private ScheduledExecutorService scheduler;
@@ -39,11 +42,30 @@ public class VilleActor implements Actor {
     
     // Inter-pod messaging
     private InterPodMessaging interPodMessaging;
-    private MessageConsumer consumer;
+    private MessageConsumer consumer;  // For publishing weather reports
+    private Map<String, MessageConsumer> sensorConsumers;  // Separate consumer for each sensor topic
+    private String weatherTopicName;  // Topic where climate reports are published
     private static final String SENSOR_READINGS_TOPIC = "iot-city-sensor-readings";
     
     public VilleActor(Map<String, Object> params) {
-        this.name = (String) params.getOrDefault("nom", "UnknownCity");
+        // Get actorId
+        String actorIdParam = (String) params.getOrDefault("actorId", "UnknownCity");
+        this.actorId = actorIdParam;
+        
+        // Try to get name from params first (villeName or nom)
+        String nameFromParams = (String) params.getOrDefault("villeName", 
+                                    params.getOrDefault("nom", null));
+        
+        // If no name in params, use actorId and capitalize it (e.g., "paris" -> "Paris")
+        if (nameFromParams == null) {
+            this.name = actorIdParam.substring(0, 1).toUpperCase() + actorIdParam.substring(1).toLowerCase();
+        } else {
+            this.name = nameFromParams;
+        }
+        
+        // Create weather topic name for this city
+        this.weatherTopicName = "ville-" + actorId + "-weather";
+        
         this.climateConfig = parseClimateConfig(params.get("climateConfig"));
     }
     
@@ -138,19 +160,10 @@ public class VilleActor implements Actor {
             
             this.consumer = interPodMessaging.getConsumer();
             
-            // Subscribe to sensor readings from other pods
-            consumer.subscribe(
-                CapteurDataUpdate.class.getName(),
-                CapteurDataUpdate.class,
-                update -> {
-                    System.out.println(name + " received inter-pod sensor reading from " + update.getCapteurId());
-                    latestReadings.put(update.getCapteurId(), update.getReading());
-                }
-            );
+            // Create 3 sensors for this city and subscribe to their topics
+            createAndSubscribeSensors();
             
-            // Start listening to sensor readings topic
-            consumer.listen(SENSOR_READINGS_TOPIC);
-            System.out.println("VilleActor: Inter-pod messaging initialized and listening on " + SENSOR_READINGS_TOPIC);
+            System.out.println("VilleActor: Inter-pod messaging initialized");
         } catch (Exception e) {
             System.err.println("VilleActor: Failed to initialize messaging - " + e.getMessage());
             this.interPodMessaging = null;
@@ -159,6 +172,9 @@ public class VilleActor implements Actor {
         // Start periodic climate report broadcasting (every 5 seconds)
         scheduler = Executors.newSingleThreadScheduledExecutor();
         scheduler.scheduleAtFixedRate(this::broadcastClimateReport, 5, 5, TimeUnit.SECONDS);
+        
+        // Subscribe to 3 sensor topics
+        createAndSubscribeSensors();
     }
     
     @Override
@@ -174,6 +190,9 @@ public class VilleActor implements Actor {
         else if (payload instanceof CapteurDataUpdate update) {
             handleCapteurDataUpdate(update);
         }
+        else if (payload instanceof WeatherRequest req) {
+            handleWeatherRequest(req);
+        }
         else if (payload instanceof String command) {
             handleStringCommand(command);
         }
@@ -183,18 +202,49 @@ public class VilleActor implements Actor {
     }
     
     private void handleRegisterClient(RegisterClient req) {
-        registeredClients.add(req.getClientRef());
-        System.out.println("Client registered with " + name + ": " + req.getClientRef().getActorId());
+        // Handle both ActorRef-based (real actors) and clientId-based (REST API testing)
+        if (req.getClientRef() != null) {
+            registeredClients.put(req.getClientRef().getActorId(), req.getClientRef());
+            System.out.println("Client registered with " + name + ": " + req.getClientRef().getActorId());
+        } else if (req.getClientId() != null) {
+            // For REST API testing - store with a dummy ActorRef (null ActorRef not allowed in ConcurrentHashMap)
+            registeredClients.put(req.getClientId(), new DummyActorRef(req.getClientId()));
+            System.out.println("Client registered with " + name + ": " + req.getClientId());
+        }
     }
     
     private void handleUnregisterClient(UnregisterClient req) {
-        registeredClients.remove(req.getClientRef());
-        System.out.println("Client unregistered from " + name + ": " + req.getClientRef().getActorId());
+        // Handle both ActorRef-based and clientId-based messaging
+        if (req.getClientRef() != null) {
+            registeredClients.remove(req.getClientRef().getActorId());
+            System.out.println("Client unregistered from " + name + ": " + req.getClientRef().getActorId());
+        } else if (req.getClientId() != null) {
+            registeredClients.remove(req.getClientId());
+            System.out.println("Client unregistered from " + name + ": " + req.getClientId());
+        }
     }
     
     private void handleCapteurDataUpdate(CapteurDataUpdate update) {
         latestReadings.put(update.getCapteurId(), update.getReading());
         System.out.println(name + " received sensor reading from " + update.getCapteurId());
+    }
+    
+    private void handleWeatherRequest(WeatherRequest req) {
+        System.out.println(name + " received weather request from " + req.getClientId());
+        
+        // Aggregate current sensor data
+        Map<String, Double> aggregated = aggregateSensorData();
+        
+        // Create and send climate report back
+        ClimateReport report = new ClimateReport(
+            context != null ? context.self().getActorId() : "unknown",
+            name,
+            aggregated,
+            latestReadings.size(),
+            System.currentTimeMillis()
+        );
+        
+        System.out.println(name + " sending weather response with " + latestReadings.size() + " sensors");
     }
     
     private void handleStringCommand(String command) {
@@ -210,11 +260,110 @@ public class VilleActor implements Actor {
      * Called every 5 seconds by scheduler.
      */
     private void broadcastClimateReport() {
-        if (registeredClients.isEmpty() || !"ACTIVE".equals(status)) {
+        if (!"ACTIVE".equals(status)) {
             return;
         }
         
-        // Aggregate sensor data by type
+        Map<String, Double> aggregated = aggregateSensorData();
+        
+        // Create climate report
+        ClimateReport report = new ClimateReport(
+            context != null ? context.self().getActorId() : "unknown",
+            name,
+            aggregated,
+            latestReadings.size(),
+            System.currentTimeMillis()
+        );
+        
+        // Publish to Kafka topic for this city's weather
+        try {
+            if (interPodMessaging != null) {
+                interPodMessaging.getProducer().send(report, weatherTopicName);
+                System.out.println(name + " published climate report to Kafka topic: " + weatherTopicName);
+            } else {
+                System.out.println(name + " - Warning: InterPodMessaging not initialized, skipping Kafka publish");
+            }
+        } catch (Exception e) {
+            System.err.println(name + " - Error publishing climate report to Kafka: " + e.getMessage());
+        }
+    }
+    
+    private void createAndSubscribeSensors() {
+        try {
+            sensorConsumers = new ConcurrentHashMap<>();
+            String[] sensorTypes = {"TEMPERATURE", "HUMIDITY", "PRESSURE"};
+            
+            // Create a serializer for consumers
+            MessageSerializer serializer = new JacksonMessageSerializer();
+            
+            for (String sensorType : sensorTypes) {
+                String sensorId = sensorType.toLowerCase() + "-" + actorId;
+                String kafkaTopic = "capteur-" + sensorType.toLowerCase() + "-" + actorId;
+                
+                // Create a separate consumer for each sensor topic
+                MessageConsumer sensorConsumer = new DefaultMessageConsumer(serializer);
+                
+                // Subscribe to sensor readings
+                sensorConsumer.subscribe(
+                    SensorReading.class.getName(),
+                    SensorReading.class,
+                    reading -> {
+                        System.out.println(name + " received " + reading.getSensorType() + " reading: " + reading.getValue());
+                        latestReadings.put(sensorId, reading);
+                    }
+                );
+                
+                // Start listening to this specific topic
+                sensorConsumer.listen(kafkaTopic);
+                sensorConsumers.put(sensorType, sensorConsumer);
+                System.out.println("VilleActor: Listening to sensor topic " + kafkaTopic);
+            }
+        } catch (Exception e) {
+            System.err.println("VilleActor: Error subscribing to sensor topics - " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    @Override
+    public void postStop() {
+        // Shutdown scheduler
+        if (scheduler != null) {
+            scheduler.shutdown();
+            try {
+                scheduler.awaitTermination(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        // Shutdown sensor consumers
+        if (sensorConsumers != null) {
+            for (MessageConsumer sensorConsumer : sensorConsumers.values()) {
+                try {
+                    sensorConsumer.stopListening(null); // Stop all listening
+                } catch (Exception e) {
+                    // Ignore, it's shutdown time anyway
+                }
+            }
+        }
+        
+        // Shutdown inter-pod messaging
+        if (interPodMessaging != null) {
+            try {
+                interPodMessaging.shutdown();
+                System.out.println("VilleActor: Inter-pod messaging shutdown");
+            } catch (Exception e) {
+                System.err.println("VilleActor: Error shutting down messaging - " + e.getMessage());
+            }
+        }
+        
+        System.out.println("VilleActor stopped: " + name);
+    }
+    
+    /**
+     * Aggregate sensor readings by type and calculate averages.
+     */
+    public Map<String, Double> aggregateSensorData() {
         Map<String, Double> aggregated = new HashMap<>();
         Map<String, List<Double>> groupedByType = new HashMap<>();
         
@@ -233,45 +382,123 @@ public class VilleActor implements Actor {
             aggregated.put(entry.getKey(), avg);
         }
         
-        // Create climate report
-        ClimateReport report = new ClimateReport(
-            context != null ? context.self().getActorId() : "unknown",
-            name,
-            aggregated,
-            latestReadings.size(),
-            System.currentTimeMillis()
-        );
-        
-        // Broadcast to all registered clients
-        for (ActorRef client : registeredClients) {
-            client.tell(new SimpleMessage(report), context != null ? context.self() : null);
-        }
-        
-        System.out.println(name + " broadcasted climate report to " + registeredClients.size() + " clients");
+        return aggregated;
     }
     
-    @Override
-    public void postStop() {
-        // Shutdown scheduler
-        if (scheduler != null) {
-            scheduler.shutdown();
-            try {
-                scheduler.awaitTermination(1, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+    /**
+     * Get the latest readings map (for direct access by REST API).
+     */
+    public Map<String, SensorReading> getLatestReadings() {
+        return latestReadings;
+    }
+    
+    /**
+     * Get the city name.
+     */
+    public String getName() {
+        return name;
+    }
+    
+    /**
+     * Get the number of registered clients.
+     */
+    public int getRegisteredClientsCount() {
+        return registeredClients.size();
+    }
+
+    /**
+     * Get the climate configuration for this city.
+     */
+    public ClimateConfig getClimateConfig() {
+        return climateConfig;
+    }
+
+    /**
+     * DummyActorRef for REST API testing - represents a client without a real ActorRef
+     */
+    public static class DummyActorRef implements ActorRef {
+        private final String actorId;
+
+        public DummyActorRef(String actorId) {
+            this.actorId = actorId;
         }
-        
-        // Shutdown inter-pod messaging
-        if (interPodMessaging != null) {
-            try {
-                interPodMessaging.shutdown();
-                System.out.println("VilleActor: Inter-pod messaging shutdown");
-            } catch (Exception e) {
-                System.err.println("VilleActor: Error shutting down messaging - " + e.getMessage());
-            }
+
+        @Override
+        public String getActorId() {
+            return actorId;
         }
-        
-        System.out.println("VilleActor stopped: " + name);
+
+        @Override
+        public String getPath() {
+            return "/dummy/" + actorId;
+        }
+
+        @Override
+        public void tell(Message message) {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public void tell(Message message, ActorRef sender) {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Object> ask(Message message, long timeout, java.util.concurrent.TimeUnit unit) {
+            // Return a completed future for dummy clients
+            return java.util.concurrent.CompletableFuture.failedFuture(
+                new UnsupportedOperationException("DummyActorRef doesn't support ask pattern"));
+        }
+
+        @Override
+        public void forward(Message message, ActorRef originalSender) {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public boolean isActive() {
+            return true;
+        }
+
+        @Override
+        public void stop() {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public void block() {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public void unblock() {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public void restart(Throwable cause) {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public com.acme.saf.actor.core.ActorLifecycleState getState() {
+            return com.acme.saf.actor.core.ActorLifecycleState.RUNNING;
+        }
+
+        @Override
+        public void watch(ActorRef watcher) {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public void unwatch(ActorRef watcher) {
+            // No-op for REST API test clients
+        }
+
+        @Override
+        public String toString() {
+            return "DummyActorRef(" + actorId + ")";
+        }
     }
 }
+

@@ -73,6 +73,8 @@ services:
     depends_on:
       saf-control:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     ports:
       - "8084:8084"
     environment:
@@ -80,6 +82,8 @@ services:
       SAF_CONTROL_URL: http://saf-control:8080
       SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
       SERVICE_URL: http://client-service:8084
+      KAFKA_BROKERS: kafka:9092
+      MESSAGING_BROKER_TYPE: kafka
       JAVA_OPTS: -Xmx256m -Xms128m
     networks:
       - saf-network

@@ -27,6 +27,8 @@ public class CapteurActor implements Actor {
     
     // Configuration
     private final String sensorType;  // "TEMPERATURE", "PRESSURE", "HUMIDITY"
+    private final String villeId;     // Paris, etc
+    private final String kafkaTopic;  // capteur-temperature-paris
     private ClimateConfig villeConfig;
     private ActorRef associatedVille;
     private String status = "ACTIVE";
@@ -43,6 +45,57 @@ public class CapteurActor implements Actor {
     
     public CapteurActor(Map<String, Object> params) {
         this.sensorType = (String) params.getOrDefault("type", "TEMPERATURE");
+        this.villeId = (String) params.getOrDefault("villeId", "unknown");
+        this.kafkaTopic = "capteur-" + sensorType.toLowerCase() + "-" + villeId;
+        
+        // Extract and parse climate config passed from the city actor
+        this.villeConfig = parseClimateConfig(params.get("climateConfig"));
+        System.err.println("✓ CapteurActor: Initialized with climateConfig for " + sensorType + "-" + villeId + ": " + villeConfig);
+    }
+    
+    /**
+     * Parse ClimateConfig from various input formats
+     */
+    @SuppressWarnings("unchecked")
+    private ClimateConfig parseClimateConfig(Object configObj) {
+        if (configObj == null) {
+            // Default config
+            return new ClimateConfig(20.0, 1013.0, 60.0, 10.0);
+        }
+        
+        if (configObj instanceof ClimateConfig) {
+            return (ClimateConfig) configObj;
+        }
+        
+        if (configObj instanceof Map) {
+            Map<String, Object> map = (Map<String, Object>) configObj;
+            
+            // Try to parse from the map
+            double meanTemp = getDoubleValue(map, "meanTemperature", 20.0);
+            double meanPressure = getDoubleValue(map, "meanPressure", 1013.0);
+            double meanHumidity = getDoubleValue(map, "meanHumidity", 60.0);
+            double variance = getDoubleValue(map, "temperatureVariance", 10.0);
+            
+            return new ClimateConfig(meanTemp, meanPressure, meanHumidity, variance);
+        }
+        
+        // Default fallback
+        return new ClimateConfig(20.0, 1013.0, 60.0, 10.0);
+    }
+    
+    private double getDoubleValue(Map<String, Object> map, String key, double defaultValue) {
+        Object value = map.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
     
     /**
@@ -168,15 +221,16 @@ public class CapteurActor implements Actor {
                 associatedVille.tell(new SimpleMessage(update), context != null ? context.self() : null);
             }
             
-            // Broadcast to other pods via messaging broker
+            // Broadcast to other pods via messaging broker on individual topic
             logger.info("Checking producer: producer={}, isConnected={}", producer, producer != null ? producer.isConnected() : "null");
             if (producer != null && producer.isConnected()) {
                 try {
-                    logger.info("Sending async to Kafka...");
-                    producer.sendAsync(update, SENSOR_READINGS_TOPIC);
-                    logger.info("✓ Capteur {} broadcast to Kafka: {}", sensorType, String.format("%.2f", randomValue));
+                    logger.info("Sending to Kafka topic: {} ...", kafkaTopic);
+                    // Send SensorReading directly to individual capteur topic
+                    producer.sendAsync(reading, kafkaTopic);
+                    logger.info("✓ Capteur {} broadcast to {}: {}", sensorType, kafkaTopic, String.format("%.2f", randomValue));
                 } catch (Exception e) {
-                    logger.error("✗ Failed to broadcast reading inter-pods: {}", e.getMessage(), e);
+                    logger.error("✗ Failed to broadcast reading to {}: {}", kafkaTopic, e.getMessage(), e);
                 }
             } else {
                 logger.warn("✗ Capteur {} producer not connected or null", sensorType);
