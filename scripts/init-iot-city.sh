@@ -1,8 +1,14 @@
 #!/bin/bash
 
 # IoT City Initialization Script
-# This script initializes the IoT City application by creating cities and their associated actors
-# Run this after all services are up and healthy
+# Compatible with bash 3.x (macOS default)
+#
+# This script initializes the IoT City application by creating actors in the correct order:
+# 1. Capteurs (9 sensors - 3 per city) - created first
+# 2. Villes (3 cities) 
+# 3. Associate capteurs to cities via RegisterCapteur messages
+# 4. Clients (3 clients - created WITHOUT city assignment)
+# 5. Clients enter cities via RegisterClient messages
 
 set -e  # Exit on error
 
@@ -17,6 +23,23 @@ echo "IoT City Initialization Script"
 echo "======================================"
 echo "SAF Control URL: $SAF_CONTROL_URL"
 echo ""
+
+# Variables to store IDs
+TEMP_PARIS_ID=""
+HUM_PARIS_ID=""
+PRES_PARIS_ID=""
+TEMP_LYON_ID=""
+HUM_LYON_ID=""
+PRES_LYON_ID=""
+TEMP_MARSEILLE_ID=""
+HUM_MARSEILLE_ID=""
+PRES_MARSEILLE_ID=""
+PARIS_ID=""
+LYON_ID=""
+MARSEILLE_ID=""
+ALICE_ID=""
+BOB_ID=""
+CHARLIE_ID=""
 
 # Function to wait for service health
 wait_for_service() {
@@ -39,14 +62,15 @@ wait_for_service() {
     return 1
 }
 
-# Function to create an actor via distributed API
+# Function to create an actor via distributed API and return the ID
+# Logs go to stderr, ID goes to stdout
 create_actor() {
     local service_id=$1
     local actor_type=$2
-    local actor_id=$3
+    local actor_name=$3
     local params=$4
     
-    echo "Creating $actor_type: $actor_id"
+    echo "Creating $actor_type: $actor_name" >&2
     
     response=$(curl -s -w "\n%{http_code}" -X POST \
         -H "Content-Type: application/json" \
@@ -58,15 +82,51 @@ create_actor() {
     body=$(echo "$response" | sed '$d')
     
     if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
-        echo "  ✓ Created successfully"
+        actor_id=$(echo "$body" | grep -o '"actorId":"[^"]*"' | head -1 | sed 's/"actorId":"//;s/"//')
+        echo "  ✓ Created successfully (ID: $actor_id)" >&2
+        echo "$actor_id"
         return 0
     else
+        echo "  ✗ Failed (HTTP $http_code): $body" >&2
+        return 1
+    fi
+}
+
+# Function to send a message to an actor (tell pattern)
+send_message() {
+    local actor_id=$1
+    local message_type=$2
+    local message_payload=$3
+    
+    echo "Sending $message_type to $actor_id"
+    
+    # Generate a unique message ID and timestamp
+    local msg_id=$(uuidgen 2>/dev/null || echo "msg-$(date +%s)-$$")
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    
+    # Build the full TellActorCommand with SimpleMessage format
+    # The @class field is required for Jackson polymorphic deserialization
+    local json_body="{\"targetActorId\":\"$actor_id\",\"senderActorId\":\"system\",\"message\":{\"@class\":\"com.acme.saf.actor.core.SimpleMessage\",\"messageId\":\"$msg_id\",\"timestamp\":\"$timestamp\",\"correlationId\":null,\"payload\":$message_payload}}"
+    
+    response=$(curl -s -w "\n%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: $API_KEY" \
+        -d "$json_body" \
+        "$SAF_CONTROL_URL/api/v1/actors/$actor_id/tell")
+    
+    http_code=$(echo "$response" | tail -n1)
+    
+    if [ "$http_code" -eq 200 ]; then
+        echo "  ✓ Message sent successfully"
+        return 0
+    else
+        body=$(echo "$response" | sed '$d')
         echo "  ✗ Failed (HTTP $http_code): $body"
         return 1
     fi
 }
 
-# Wait for all services to be healthy
+# Step 1: Wait for all services to be healthy
 echo "Step 1: Checking service health..."
 echo "-----------------------------------"
 wait_for_service "SAF Control" "$SAF_CONTROL_URL/actuator/health" || exit 1
@@ -75,108 +135,124 @@ wait_for_service "Ville Service" "http://localhost:8085/actuator/health" || exit
 wait_for_service "Capteur Service" "http://localhost:8086/actuator/health" || exit 1
 echo ""
 
-# Give services a bit more time to fully register
 echo "Waiting 5 seconds for services to fully register..."
 sleep 5
 echo ""
 
-# Initialize cities
-echo "Step 2: Creating cities..."
+# Step 2: Create Capteurs (9 sensors)
+echo "Step 2: Creating capteur actors (9 sensors)..."
 echo "-----------------------------------"
 
-# Paris
-create_actor "ville-service" "VilleActor" "paris" '{
-  "nom": "Paris",
-  "population": 2161000,
-  "superficie": 105.4,
-  "climateConfig": {
-    "tempMin": -5.0,
-    "tempMax": 35.0,
-    "humidityMin": 30.0,
-    "humidityMax": 90.0,
-    "pressureMin": 980.0,
-    "pressureMax": 1030.0
-  }
-}'
+TEMP_PARIS_ID=$(create_actor "capteur-service" "CapteurActor" "temp-paris" '{"sensorType":"TEMPERATURE","location":"Tour Eiffel","minValue":-10.0,"maxValue":45.0,"unit":"C"}')
+HUM_PARIS_ID=$(create_actor "capteur-service" "CapteurActor" "hum-paris" '{"sensorType":"HUMIDITY","location":"Louvre","minValue":20.0,"maxValue":95.0,"unit":"%"}')
+PRES_PARIS_ID=$(create_actor "capteur-service" "CapteurActor" "pres-paris" '{"sensorType":"PRESSURE","location":"Notre-Dame","minValue":970.0,"maxValue":1040.0,"unit":"hPa"}')
 
-# Lyon  
-create_actor "ville-service" "VilleActor" "lyon" '{
-  "nom": "Lyon",
-  "population": 516092,
-  "superficie": 47.87,
-  "climateConfig": {
-    "tempMin": -5.0,
-    "tempMax": 35.0,
-    "humidityMin": 30.0,
-    "humidityMax": 90.0,
-    "pressureMin": 980.0,
-    "pressureMax": 1030.0
-  }
-}'
+TEMP_LYON_ID=$(create_actor "capteur-service" "CapteurActor" "temp-lyon" '{"sensorType":"TEMPERATURE","location":"Fourviere","minValue":-10.0,"maxValue":42.0,"unit":"C"}')
+HUM_LYON_ID=$(create_actor "capteur-service" "CapteurActor" "hum-lyon" '{"sensorType":"HUMIDITY","location":"Place Bellecour","minValue":25.0,"maxValue":90.0,"unit":"%"}')
+PRES_LYON_ID=$(create_actor "capteur-service" "CapteurActor" "pres-lyon" '{"sensorType":"PRESSURE","location":"Parc Tete dOr","minValue":975.0,"maxValue":1035.0,"unit":"hPa"}')
 
-# Marseille
-create_actor "ville-service" "VilleActor" "marseille" '{
-  "nom": "Marseille",
-  "population": 869815,
-  "superficie": 240.62,
-  "climateConfig": {
-    "tempMin": 0.0,
-    "tempMax": 40.0,
-    "humidityMin": 25.0,
-    "humidityMax": 95.0,
-    "pressureMin": 985.0,
-    "pressureMax": 1025.0
-  }
-}'
+TEMP_MARSEILLE_ID=$(create_actor "capteur-service" "CapteurActor" "temp-marseille" '{"sensorType":"TEMPERATURE","location":"Vieux-Port","minValue":-5.0,"maxValue":48.0,"unit":"C"}')
+HUM_MARSEILLE_ID=$(create_actor "capteur-service" "CapteurActor" "hum-marseille" '{"sensorType":"HUMIDITY","location":"Notre-Dame de la Garde","minValue":20.0,"maxValue":98.0,"unit":"%"}')
+PRES_MARSEILLE_ID=$(create_actor "capteur-service" "CapteurActor" "pres-marseille" '{"sensorType":"PRESSURE","location":"Calanques","minValue":980.0,"maxValue":1030.0,"unit":"hPa"}')
 
 echo ""
+echo "Created 9 capteurs successfully"
+echo ""
 
-# Create clients for each city
-echo "Step 3: Creating client actors..."
+# Step 3: Create Villes (3 cities)
+echo "Step 3: Creating ville actors (3 cities)..."
 echo "-----------------------------------"
 
-# Clients for Paris
-create_actor "client-service" "ClientActor" "client-paris-1" '{"cityId":"paris","clientName":"Client Paris 1"}'
-create_actor "client-service" "ClientActor" "client-paris-2" '{"cityId":"paris","clientName":"Client Paris 2"}'
-
-# Clients for Lyon
-create_actor "client-service" "ClientActor" "client-lyon-1" '{"cityId":"lyon","clientName":"Client Lyon 1"}'
-create_actor "client-service" "ClientActor" "client-lyon-2" '{"cityId":"lyon","clientName":"Client Lyon 2"}'
-
-# Clients for Marseille
-create_actor "client-service" "ClientActor" "client-marseille-1" '{"cityId":"marseille","clientName":"Client Marseille 1"}'
-create_actor "client-service" "ClientActor" "client-marseille-2" '{"cityId":"marseille","clientName":"Client Marseille 2"}'
+PARIS_ID=$(create_actor "ville-service" "VilleActor" "paris" '{"nom":"Paris","population":2161000,"superficie":105.4}')
+LYON_ID=$(create_actor "ville-service" "VilleActor" "lyon" '{"nom":"Lyon","population":516092,"superficie":47.87}')
+MARSEILLE_ID=$(create_actor "ville-service" "VilleActor" "marseille" '{"nom":"Marseille","population":869815,"superficie":240.62}')
 
 echo ""
+echo "Created 3 villes successfully"
+echo "  Paris ID: $PARIS_ID"
+echo "  Lyon ID: $LYON_ID"
+echo "  Marseille ID: $MARSEILLE_ID"
+echo ""
 
-# Create sensors for each city
-echo "Step 4: Creating sensor actors..."
+sleep 3
+echo ""
+
+# Step 4: Associate Capteurs to Villes
+echo "Step 4: Associating capteurs to villes (RegisterCapteur)..."
 echo "-----------------------------------"
 
-# Sensors for Paris
-create_actor "capteur-service" "CapteurActor" "temp-paris-1" '{"cityId":"paris","sensorType":"TEMPERATURE","location":"Eiffel Tower"}'
-create_actor "capteur-service" "CapteurActor" "hum-paris-1" '{"cityId":"paris","sensorType":"HUMIDITY","location":"Louvre"}'
-create_actor "capteur-service" "CapteurActor" "pres-paris-1" '{"cityId":"paris","sensorType":"PRESSURE","location":"Notre-Dame"}'
+send_message "$PARIS_ID" "RegisterCapteur" "{\"capteurId\":\"$TEMP_PARIS_ID\",\"capteurType\":\"TEMPERATURE\",\"kafkaTopic\":\"capteur-temperature-paris\",\"location\":\"Tour Eiffel\"}"
+send_message "$PARIS_ID" "RegisterCapteur" "{\"capteurId\":\"$HUM_PARIS_ID\",\"capteurType\":\"HUMIDITY\",\"kafkaTopic\":\"capteur-humidity-paris\",\"location\":\"Louvre\"}"
+send_message "$PARIS_ID" "RegisterCapteur" "{\"capteurId\":\"$PRES_PARIS_ID\",\"capteurType\":\"PRESSURE\",\"kafkaTopic\":\"capteur-pressure-paris\",\"location\":\"Notre-Dame\"}"
 
-# Sensors for Lyon
-create_actor "capteur-service" "CapteurActor" "temp-lyon-1" '{"cityId":"lyon","sensorType":"TEMPERATURE","location":"Fourvière"}'
-create_actor "capteur-service" "CapteurActor" "hum-lyon-1" '{"cityId":"lyon","sensorType":"HUMIDITY","location":"Place Bellecour"}'
-create_actor "capteur-service" "CapteurActor" "pres-lyon-1" '{"cityId":"lyon","sensorType":"PRESSURE","location":"Parc de la Tête d Or"}'
+send_message "$LYON_ID" "RegisterCapteur" "{\"capteurId\":\"$TEMP_LYON_ID\",\"capteurType\":\"TEMPERATURE\",\"kafkaTopic\":\"capteur-temperature-lyon\",\"location\":\"Fourviere\"}"
+send_message "$LYON_ID" "RegisterCapteur" "{\"capteurId\":\"$HUM_LYON_ID\",\"capteurType\":\"HUMIDITY\",\"kafkaTopic\":\"capteur-humidity-lyon\",\"location\":\"Place Bellecour\"}"
+send_message "$LYON_ID" "RegisterCapteur" "{\"capteurId\":\"$PRES_LYON_ID\",\"capteurType\":\"PRESSURE\",\"kafkaTopic\":\"capteur-pressure-lyon\",\"location\":\"Parc Tete dOr\"}"
 
-# Sensors for Marseille  
-create_actor "capteur-service" "CapteurActor" "temp-marseille-1" '{"cityId":"marseille","sensorType":"TEMPERATURE","location":"Vieux-Port"}'
-create_actor "capteur-service" "CapteurActor" "hum-marseille-1" '{"cityId":"marseille","sensorType":"HUMIDITY","location":"Notre-Dame de la Garde"}'
-create_actor "capteur-service" "CapteurActor" "pres-marseille-1" '{"cityId":"marseille","sensorType":"PRESSURE","location":"Calanques"}'
+send_message "$MARSEILLE_ID" "RegisterCapteur" "{\"capteurId\":\"$TEMP_MARSEILLE_ID\",\"capteurType\":\"TEMPERATURE\",\"kafkaTopic\":\"capteur-temperature-marseille\",\"location\":\"Vieux-Port\"}"
+send_message "$MARSEILLE_ID" "RegisterCapteur" "{\"capteurId\":\"$HUM_MARSEILLE_ID\",\"capteurType\":\"HUMIDITY\",\"kafkaTopic\":\"capteur-humidity-marseille\",\"location\":\"Notre-Dame de la Garde\"}"
+send_message "$MARSEILLE_ID" "RegisterCapteur" "{\"capteurId\":\"$PRES_MARSEILLE_ID\",\"capteurType\":\"PRESSURE\",\"kafkaTopic\":\"capteur-pressure-marseille\",\"location\":\"Calanques\"}"
 
 echo ""
+echo "Associated 9 capteurs to 3 villes"
+echo ""
+
+# Step 5: Create Clients (WITHOUT city assignment)
+echo "Step 5: Creating client actors (3 clients - unassigned)..."
+echo "-----------------------------------"
+
+ALICE_ID=$(create_actor "client-service" "ClientActor" "alice" '{"clientName":"Alice"}')
+BOB_ID=$(create_actor "client-service" "ClientActor" "bob" '{"clientName":"Bob"}')
+CHARLIE_ID=$(create_actor "client-service" "ClientActor" "charlie" '{"clientName":"Charlie"}')
+
+echo ""
+echo "Created 3 clients (not assigned to any city yet)"
+echo "  Alice ID: $ALICE_ID"
+echo "  Bob ID: $BOB_ID"
+echo "  Charlie ID: $CHARLIE_ID"
+echo ""
+
+sleep 2
+echo ""
+
+# Step 6: Clients enter cities (RegisterClient)
+echo "Step 6: Clients entering cities (RegisterClient)..."
+echo "-----------------------------------"
+
+send_message "$PARIS_ID" "RegisterClient" "{\"clientId\":\"$ALICE_ID\"}"
+echo "  Alice entered Paris"
+
+send_message "$LYON_ID" "RegisterClient" "{\"clientId\":\"$BOB_ID\"}"
+echo "  Bob entered Lyon"
+
+send_message "$MARSEILLE_ID" "RegisterClient" "{\"clientId\":\"$CHARLIE_ID\"}"
+echo "  Charlie entered Marseille"
+
+echo ""
+echo "All clients have entered their cities"
+echo ""
+
 echo "======================================"
 echo "✓ Initialization completed successfully!"
 echo "======================================"
 echo ""
 echo "Summary:"
-echo "  - 3 cities created (Paris, Lyon, Marseille)"
-echo "  - 6 client actors created (2 per city)"
-echo "  - 9 sensor actors created (3 per city)"
+echo "  - 9 capteurs created (3 per city: TEMPERATURE, HUMIDITY, PRESSURE)"
+echo "  - 3 villes created (Paris, Lyon, Marseille)"
+echo "  - 9 capteur-ville associations (RegisterCapteur messages)"
+echo "  - 3 clients created (Alice, Bob, Charlie - initially unassigned)"
+echo "  - 3 clients entered cities (RegisterClient messages)"
+echo ""
+echo "Current State:"
+echo "  Paris:"
+echo "    - Capteurs: temp-paris, hum-paris, pres-paris"
+echo "    - Client: Alice"
+echo "  Lyon:"
+echo "    - Capteurs: temp-lyon, hum-lyon, pres-lyon"
+echo "    - Client: Bob"
+echo "  Marseille:"
+echo "    - Capteurs: temp-marseille, hum-marseille, pres-marseille"
+echo "    - Client: Charlie"
 echo ""
 echo "You can now access the dashboard at http://localhost:80"
 echo ""

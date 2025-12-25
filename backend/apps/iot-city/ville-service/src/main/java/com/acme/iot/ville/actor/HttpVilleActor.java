@@ -1,115 +1,92 @@
 package com.acme.iot.ville.actor;
 
 import com.acme.iot.city.actors.VilleActor;
+import com.acme.iot.city.messages.AssociateCapteurToVille;
+import com.acme.iot.city.messages.RegisterCapteur;
 import com.acme.saf.actor.core.ActorContext;
 import com.acme.saf.actor.core.ActorRef;
-import com.acme.saf.actor.core.Message;
+import com.acme.saf.actor.core.RemoteActorRefProxy;
+import com.acme.saf.actor.core.RemoteMessageTransport;
 import com.acme.saf.actor.core.SimpleMessage;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.Map;
 
 /**
- * HttpVilleActor - Wrapper extending VilleActor with HTTP communication capabilities.
+ * HttpVilleActor - Wrapper extending VilleActor with Kafka-based inter-pod communication.
  * 
- * In microservice architecture, each actor type is deployed in its own service.
- * This class extends the domain VilleActor and runs in the ville-service.
- * It adds the ability to send messages to remote actors via saf-control.
- * 
- * Communication flow:
- * 1. Frontend/client → saf-control
- * 2. saf-control → ville-service (creates HttpVilleActor via /runtime/create-actor)
- * 3. ville-service receives RegisterClient from client-service
- * 4. ville-service receives sensor data from capteur-service
- * 5. ville-service → client-service (ClimateReport via /runtime/tell through saf-control)
+ * This actor can send messages to remote actors (in other microservices) via Kafka.
+ * The name is kept as HttpVilleActor for backward compatibility, but it now uses Kafka.
  */
 public class HttpVilleActor extends VilleActor {
     
-    private WebClient webClient;
-    private String safControlUrl;
+    private RemoteMessageTransport kafkaTransport;
     
-    /**
-     * Constructor matching VilleActor signature.
-     * 
-     * @param params Actor parameters including villeName
-     */
     public HttpVilleActor(Map<String, Object> params) {
         super(params);
-        // SAF Control URL from environment or default
-        this.safControlUrl = System.getenv().getOrDefault("SAF_CONTROL_URL", "http://saf-control:8080");
-        this.webClient = WebClient.builder()
-                .baseUrl(safControlUrl)
-                .build();
+        // Kafka transport will be injected via setKafkaTransport
+    }
+    
+    /**
+     * Set the Kafka transport for inter-pod messaging.
+     * This is called by the ActorFactory after actor creation.
+     * 
+     * @param transport the Kafka message transport
+     */
+    public void setKafkaTransport(RemoteMessageTransport transport) {
+        this.kafkaTransport = transport;
     }
     
     @Override
     public void setContext(ActorContext context) {
         super.setContext(context);
-        // Inject remote messaging capability
-        context.setRemoteTransport(new com.acme.saf.actor.core.RemoteMessageTransport() {
-            @Override
-            public void sendMessage(String actorUrl, com.acme.saf.actor.core.Message message, com.acme.saf.actor.core.ActorRef sender) throws Exception {
-                sendRemoteMessage(actorUrl, message, sender);
-            }
-            
-            @Override
-            public java.util.concurrent.CompletableFuture<Object> askMessage(String actorUrl, com.acme.saf.actor.core.Message message, long timeout, java.util.concurrent.TimeUnit unit) throws Exception {
-                // Not implemented for now
-                throw new UnsupportedOperationException("Ask pattern not supported for remote actors yet");
-            }
-            
-            @Override
-            public boolean checkActorExists(String actorUrl) throws Exception {
-                // Not implemented for now
-                return false;
-            }
-            
-            @Override
-            public void stopActor(String actorUrl) throws Exception {
-                // Not implemented for now
-                throw new UnsupportedOperationException("Cannot stop remote actors directly");
-            }
-            
-            @Override
-            public com.acme.saf.actor.core.ActorLifecycleState getActorState(String actorUrl) throws Exception {
-                // Not implemented for now
-                return com.acme.saf.actor.core.ActorLifecycleState.STOPPED;
-            }
-        });
+        
+        // Inject remote messaging capability using Kafka transport
+        if (kafkaTransport != null) {
+            context.setRemoteTransport(kafkaTransport);
+            System.out.println("HttpVilleActor: Kafka transport injected into context");
+        } else {
+            System.out.println("HttpVilleActor: No Kafka transport available, remote messaging disabled");
+        }
+    }
+    
+    @Override
+    public void preStart() {
+        super.preStart();
+        System.out.println("HttpVilleActor started with Kafka transport support");
     }
     
     /**
-     * Send a message to a remote actor via saf-control.
+     * Override to send AssociateCapteurToVille message to the capteur via Kafka.
+     * This informs the capteur of its ville association so it can send readings.
      */
-    private void sendRemoteMessage(String targetActorId, Message message, ActorRef sender) {
+    @Override
+    protected void onCapteurRegistered(RegisterCapteur req) {
+        System.out.println("HttpVilleActor: Sending AssociateCapteurToVille to capteur " + req.getCapteurId());
+        
+        if (kafkaTransport == null) {
+            System.out.println("HttpVilleActor: No Kafka transport, cannot notify capteur");
+            return;
+        }
+        
+        // Create the association message
+        AssociateCapteurToVille associationMsg = new AssociateCapteurToVille(
+            context != null ? context.self().getActorId() : getActorId(),
+            getName(),
+            getClimateConfig()
+        );
+        
+        // Create a remote reference to the capteur and send the message
+        ActorRef capteurRef = new RemoteActorRefProxy(
+            req.getCapteurId(), 
+            kafkaTransport, 
+            context != null ? context.self() : null
+        );
+        
         try {
-            // Wrap the application-specific message in a generic SimpleMessage
-            SimpleMessage wrappedMessage = new SimpleMessage(message);
-            
-            // Build TellActorCommand with the generic SimpleMessage
-            com.acme.saf.actor.core.protocol.TellActorCommand command = 
-                new com.acme.saf.actor.core.protocol.TellActorCommand(
-                    targetActorId,
-                    sender != null ? sender.getActorId() : "",
-                    wrappedMessage
-                );
-
-            // Send via HTTP to saf-control
-            webClient.post()
-                    .uri("/api/v1/actors/{actorId}/tell", targetActorId)
-                    .header("X-API-KEY", "test")
-                    .bodyValue(command)
-                    .retrieve()
-                    .bodyToMono(Void.class)
-                    .subscribe(
-                            result -> System.out.println("Remote message sent to " + targetActorId),
-                            error -> System.err.println("Failed to send remote message: " + error.getMessage())
-                    );
-            
-            System.out.println("HttpVilleActor sent remote message to: " + targetActorId);
+            capteurRef.tell(new SimpleMessage(associationMsg), context != null ? context.self() : null);
+            System.out.println("HttpVilleActor: AssociateCapteurToVille sent to " + req.getCapteurId());
         } catch (Exception e) {
-            System.err.println("Error sending remote message: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("HttpVilleActor: Failed to send AssociateCapteurToVille: " + e.getMessage());
         }
     }
 }

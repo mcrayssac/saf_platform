@@ -42,8 +42,9 @@ public abstract class BaseActorRuntimeController {
                 command.getParams().put("actorId", command.getActorId());
             }
             
-            // Use ActorSystem spawn with parameters
-            ActorRef actorRef = actorSystem.spawn(command.getActorType(), command.getParams());
+            // Use ActorSystem spawn with the ID provided by saf-control
+            // This ensures the distributed registry and local actor system use the same ID
+            ActorRef actorRef = actorSystem.spawn(command.getActorType(), command.getActorId(), command.getParams());
             
             log.info("[{}] Actor created successfully: {}", serviceName, command.getActorId());
             

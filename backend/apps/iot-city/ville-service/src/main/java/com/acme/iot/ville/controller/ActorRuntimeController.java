@@ -37,12 +37,14 @@ public class ActorRuntimeController extends BaseActorRuntimeController {
     private final ActorSystem actorSystem;
     
     public ActorRuntimeController(ActorSystem actorSystem, HttpVilleActorFactory actorFactory) {
-        super(actorSystem, actorFactory, "ville-service");
+        super(actorSystem, actorFactory, "ville-service", "ws://ville-service:8083");
         this.actorSystem = actorSystem;
     }
     
     /**
-     * Override createActor to automatically create 3 sensor actors when a VilleActor is created
+     * Override createActor to use the ID provided by saf-control.
+     * Note: Capteurs are created separately on the capteur-service and associated
+     * to villes via RegisterCapteur messages.
      */
     @Override
     @PostMapping("/create-actor")
@@ -58,15 +60,9 @@ public class ActorRuntimeController extends BaseActorRuntimeController {
             // Always set actorId in params
             command.getParams().put("actorId", command.getActorId());
             
-            // Extract climate config from command params (if provided)
-            Object climateConfigObj = command.getParams().get("climateConfig");
-            
-            ActorRef villeRef = actorSystem.spawn(command.getActorType(), command.getParams());
-            
-            // If this is a VilleActor, create the 3 sensors
-            if ("VilleActor".equals(command.getActorType())) {
-                createSensorsForCity(command.getActorId(), climateConfigObj);
-            }
+            // Use spawn with the ID provided by saf-control
+            // This ensures the distributed registry and local actor system use the same ID
+            ActorRef villeRef = actorSystem.spawn(command.getActorType(), command.getActorId(), command.getParams());
             
             log.info("[ville-service] Actor created successfully: {}", command.getActorId());
             return ResponseEntity.ok(
@@ -84,36 +80,6 @@ public class ActorRuntimeController extends BaseActorRuntimeController {
                             e.getMessage()
                     )
             );
-        }
-    }
-    
-    /**
-     * Create 3 sensor actors for a city
-     */
-    private void createSensorsForCity(String villeId, Object climateConfig) {
-        String[] sensorTypes = {"TEMPERATURE", "HUMIDITY", "PRESSURE"};
-        
-        for (String sensorType : sensorTypes) {
-            try {
-                String sensorActorId = sensorType.toLowerCase() + "-" + villeId;
-                
-                Map<String, Object> sensorParams = new HashMap<>();
-                sensorParams.put("type", sensorType);
-                sensorParams.put("villeId", villeId);
-                sensorParams.put("actorId", sensorActorId);
-                
-                // Pass the climate configuration to the sensor if provided
-                if (climateConfig != null) {
-                    sensorParams.put("climateConfig", climateConfig);
-                    log.debug("[ville-service] Passing climateConfig to sensor {}", sensorActorId);
-                }
-                
-                ActorRef sensorRef = actorSystem.spawn("CapteurActor", sensorParams);
-                
-                log.info("[ville-service] Created sensor: {} for city: {}", sensorActorId, villeId);
-            } catch (Exception e) {
-                log.error("[ville-service] Failed to create sensor {} for city {}", sensorType, villeId, e);
-            }
         }
     }
 }

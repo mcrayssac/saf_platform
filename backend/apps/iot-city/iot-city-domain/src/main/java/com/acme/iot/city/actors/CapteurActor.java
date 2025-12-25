@@ -1,13 +1,12 @@
 package com.acme.iot.city.actors;
 
+import com.acme.iot.city.messages.AssociateCapteurToVille;
 import com.acme.iot.city.messages.CapteurDataUpdate;
 import com.acme.iot.city.messages.ClimateConfigUpdate;
 import com.acme.iot.city.model.ClimateConfig;
 import com.acme.iot.city.model.SensorReading;
 import com.acme.saf.actor.core.*;
 import com.acme.saf.saf_runtime.messaging.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Random;
@@ -23,14 +22,15 @@ import java.util.concurrent.*;
  * - Broadcast readings inter-pods via messaging broker for other instances
  */
 public class CapteurActor implements Actor {
-    private static final Logger logger = LoggerFactory.getLogger(CapteurActor.class);
     
     // Configuration
     private final String sensorType;  // "TEMPERATURE", "PRESSURE", "HUMIDITY"
-    private final String villeId;     // Paris, etc
-    private final String kafkaTopic;  // capteur-temperature-paris
+    private String villeId;           // Paris, etc - can be set later via AssociateCapteurToVille
+    private String kafkaTopic;        // capteur-temperature-paris - updated when ville is set
+    private final String location;    // Location within the city
     private ClimateConfig villeConfig;
     private ActorRef associatedVille;
+    private String associatedVilleId; // Store ville ID for remote messaging
     private String status = "ACTIVE";
     
     // Scheduler for periodic sensor readings
@@ -38,19 +38,20 @@ public class CapteurActor implements Actor {
     private final Random random = new Random();
     private ActorContext context;
     
-    // Inter-pod messaging
-    private InterPodMessaging interPodMessaging;
-    private MessageProducer producer;
-    private static final String SENSOR_READINGS_TOPIC = "iot-city-sensor-readings";
+    // Inter-pod messaging via Kafka
+    private RemoteMessageTransport remoteTransport;
     
     public CapteurActor(Map<String, Object> params) {
-        this.sensorType = (String) params.getOrDefault("type", "TEMPERATURE");
+        // Support both "type" and "sensorType" parameter names
+        this.sensorType = (String) params.getOrDefault("sensorType", 
+                                  params.getOrDefault("type", "TEMPERATURE"));
         this.villeId = (String) params.getOrDefault("villeId", "unknown");
-        this.kafkaTopic = "capteur-" + sensorType.toLowerCase() + "-" + villeId;
+        this.location = (String) params.getOrDefault("location", "unknown");
+        this.kafkaTopic = "capteur-" + sensorType.toLowerCase() + "-" + villeId.toLowerCase();
         
         // Extract and parse climate config passed from the city actor
         this.villeConfig = parseClimateConfig(params.get("climateConfig"));
-        System.err.println("✓ CapteurActor: Initialized with climateConfig for " + sensorType + "-" + villeId + ": " + villeConfig);
+        System.err.println("✓ CapteurActor: Initialized " + sensorType + " at " + location + " (villeId=" + villeId + ")");
     }
     
     /**
@@ -117,28 +118,15 @@ public class CapteurActor implements Actor {
         System.out.println("CapteurActor started: type=" + sensorType);
         System.err.println("✓ CapteurActor preStart() called for type=" + sensorType);
         
-        // Initialize inter-pod messaging system (only once, reuse if already initialized)
-        try {
-            System.err.println("→ Getting or initializing MessagingConfiguration...");
-            
-            // Try to get existing instance first
-            try {
-                this.interPodMessaging = InterPodMessaging.getInstance();
-                System.err.println("✓ Reusing existing InterPodMessaging instance");
-            } catch (IllegalStateException e) {
-                // Not initialized yet, initialize it
-                System.err.println("→ No existing instance, initializing MessagingConfiguration...");
-                MessagingConfiguration config = new MessagingConfiguration();
-                this.interPodMessaging = config.initializeMessaging();
-                System.err.println("✓ New InterPodMessaging instance created");
+        // Initialize remote transport for inter-pod messaging (Kafka)
+        if (context != null && context instanceof DefaultActorContext) {
+            DefaultActorContext defaultContext = (DefaultActorContext) context;
+            this.remoteTransport = defaultContext.getRemoteTransport();
+            if (remoteTransport != null) {
+                System.err.println("✓ CapteurActor: Remote transport initialized for Kafka messaging");
+            } else {
+                System.err.println("⚠ CapteurActor: No remote transport available");
             }
-            
-            this.producer = interPodMessaging.getProducer();
-            System.err.println("✓ CapteurActor: Inter-pod messaging initialized, producer=" + producer);
-        } catch (Exception e) {
-            System.err.println("✗ CapteurActor: Failed to initialize messaging - " + e.getMessage());
-            e.printStackTrace(System.err);
-            this.interPodMessaging = null;
         }
         
         // Start periodic sensor readings (every 5 seconds, start after 2s)
@@ -151,7 +139,20 @@ public class CapteurActor implements Actor {
     public void receive(Message message) throws Exception {
         Object payload = message.getPayload();
         
-        if (payload instanceof ClimateConfigUpdate update) {
+        // Unwrap SimpleMessage if needed
+        if (payload instanceof SimpleMessage simpleMsg) {
+            payload = simpleMsg.getPayload();
+        }
+        
+        // Handle Map (from JSON deserialization)
+        if (payload instanceof Map) {
+            payload = convertMapToMessage((Map<?, ?>) payload);
+        }
+        
+        if (payload instanceof AssociateCapteurToVille assoc) {
+            handleAssociateCapteurToVille(assoc);
+        }
+        else if (payload instanceof ClimateConfigUpdate update) {
             handleClimateConfigUpdate(update);
         }
         else if (payload instanceof String command) {
@@ -160,6 +161,71 @@ public class CapteurActor implements Actor {
         else {
             System.out.println("CapteurActor received unknown message: " + payload.getClass().getName());
         }
+    }
+    
+    /**
+     * Convert a Map (from JSON deserialization) to a proper message object.
+     */
+    @SuppressWarnings("unchecked")
+    private Object convertMapToMessage(Map<?, ?> map) {
+        // Check for AssociateCapteurToVille
+        if (map.containsKey("villeId") && map.containsKey("villeName")) {
+            String villeId = (String) map.get("villeId");
+            String villeName = (String) map.get("villeName");
+            Object configObj = map.get("climateConfig");
+            ClimateConfig config = configObj != null ? parseClimateConfig(configObj) : null;
+            return new AssociateCapteurToVille(villeId, villeName, config);
+        }
+        
+        // Check for ClimateConfigUpdate
+        if (map.containsKey("config")) {
+            Object configObj = map.get("config");
+            ClimateConfig config = parseClimateConfig(configObj);
+            return new ClimateConfigUpdate(config);
+        }
+        
+        return map;
+    }
+    
+    /**
+     * Handle association of this capteur to a ville.
+     * Called when ville receives RegisterCapteur and sends back this message.
+     */
+    private void handleAssociateCapteurToVille(AssociateCapteurToVille assoc) {
+        this.associatedVilleId = assoc.getVilleId();
+        this.villeId = extractCityName(assoc.getVilleId(), assoc.getVilleName());
+        this.kafkaTopic = "capteur-" + sensorType.toLowerCase() + "-" + villeId.toLowerCase();
+        
+        if (assoc.getClimateConfig() != null) {
+            this.villeConfig = assoc.getClimateConfig();
+        }
+        
+        // Create a remote reference to the ville using Kafka transport
+        if (context != null && context instanceof DefaultActorContext) {
+            DefaultActorContext defaultContext = (DefaultActorContext) context;
+            RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+            
+            if (transport != null) {
+                this.associatedVille = new RemoteActorRefProxy(assoc.getVilleId(), transport, context.self());
+                System.out.println("✓ CapteurActor " + sensorType + " associated with ville " + assoc.getVilleId() + " via Kafka");
+            }
+        }
+        
+        System.out.println("✓ CapteurActor " + sensorType + " now associated with ville: " + villeId);
+    }
+    
+    /**
+     * Extract city name from villeId or villeName.
+     */
+    private String extractCityName(String villeId, String villeName) {
+        if (villeName != null && !villeName.isEmpty()) {
+            return villeName.toLowerCase();
+        }
+        // villeId might be a UUID, in which case we keep "unknown"
+        if (villeId != null && !villeId.contains("-")) {
+            return villeId.toLowerCase();
+        }
+        return "unknown";
     }
     
     private void handleClimateConfigUpdate(ClimateConfigUpdate update) {
@@ -182,17 +248,19 @@ public class CapteurActor implements Actor {
     }
     
     /**
-     * Generate a random sensor reading and send to associated ville.
+     * Generate a random sensor reading and send to associated ville via Kafka.
      * Called every 5 seconds by scheduler.
-     * Also broadcasts to other pods via messaging broker.
+     * Sends ONLY to the associated ville actor (not broadcast).
      */
     private void generateAndSendReading() {
         try {
-            logger.info("[SCHEDULER] generateAndSendReading called for {}", sensorType);
-            
             // Skip if not in active status
             if (!"ACTIVE".equals(status)) {
-                logger.warn("Skipping - not ACTIVE");
+                return;
+            }
+            
+            // Skip if no associated ville
+            if (associatedVilleId == null || associatedVilleId.isEmpty()) {
                 return;
             }
             
@@ -213,30 +281,25 @@ public class CapteurActor implements Actor {
                 System.currentTimeMillis()
             );
             
-            // Send to associated ville locally (if it exists)
+            // Create update message with capteur ID
             String capteurId = context != null ? context.self().getActorId() : "unknown";
             CapteurDataUpdate update = new CapteurDataUpdate(capteurId, reading);
             
+            // Send to associated ville via Kafka using RemoteActorRefProxy
             if (associatedVille != null) {
-                associatedVille.tell(new SimpleMessage(update), context != null ? context.self() : null);
-            }
-            
-            // Broadcast to other pods via messaging broker on individual topic
-            logger.info("Checking producer: producer={}, isConnected={}", producer, producer != null ? producer.isConnected() : "null");
-            if (producer != null && producer.isConnected()) {
                 try {
-                    logger.info("Sending to Kafka topic: {} ...", kafkaTopic);
-                    // Send SensorReading directly to individual capteur topic
-                    producer.sendAsync(reading, kafkaTopic);
-                    logger.info("✓ Capteur {} broadcast to {}: {}", sensorType, kafkaTopic, String.format("%.2f", randomValue));
+                    associatedVille.tell(new SimpleMessage(update), context != null ? context.self() : null);
+                    System.out.println("✓ Capteur " + sensorType + " sent " + reading.getSensorType() + 
+                                       " to ville " + associatedVilleId + ": " + String.format("%.2f", randomValue));
                 } catch (Exception e) {
-                    logger.error("✗ Failed to broadcast reading to {}: {}", kafkaTopic, e.getMessage(), e);
+                    System.err.println("✗ Failed to send reading to ville " + associatedVilleId + ": " + e.getMessage());
                 }
             } else {
-                logger.warn("✗ Capteur {} producer not connected or null", sensorType);
+                System.err.println("⚠ Capteur " + sensorType + " has no associatedVille reference (villeId=" + associatedVilleId + ")");
             }
         } catch (Exception e) {
-            logger.error("Unexpected error in generateAndSendReading", e);
+            System.err.println("Unexpected error in generateAndSendReading: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
@@ -265,16 +328,6 @@ public class CapteurActor implements Actor {
                 scheduler.awaitTermination(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-            }
-        }
-        
-        // Shutdown inter-pod messaging
-        if (interPodMessaging != null) {
-            try {
-                interPodMessaging.shutdown();
-                System.out.println("CapteurActor: Inter-pod messaging shutdown");
-            } catch (Exception e) {
-                System.err.println("CapteurActor: Error shutting down messaging - " + e.getMessage());
             }
         }
         
