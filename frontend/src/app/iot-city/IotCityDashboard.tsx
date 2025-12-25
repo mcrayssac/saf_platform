@@ -16,23 +16,51 @@ export function IotCityDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const { climateReport, isConnected, connectionError, reconnect } = useClimateUpdates();
+  const { climateReport, villeInfoUpdate, isConnected, connectionError, reconnect } = useClimateUpdates();
 
-  // Load cities on mount
+  // Load cities only after WebSocket is connected
   useEffect(() => {
-    loadCities();
-  }, []);
+    if (isConnected) {
+      console.log('✅ WebSocket connected - loading cities...');
+      loadCities();
+    }
+  }, [isConnected]);
+
+  // Handle ville info updates from WebSocket
+  useEffect(() => {
+    if (villeInfoUpdate) {
+      setCities(prevCities => {
+        const existingIndex = prevCities.findIndex(c => c.villeId === villeInfoUpdate.villeId);
+        if (existingIndex >= 0) {
+          // Update existing city
+          const newCities = [...prevCities];
+          newCities[existingIndex] = villeInfoUpdate;
+          return newCities;
+        } else {
+          // Add new city
+          return [...prevCities, villeInfoUpdate];
+        }
+      });
+    }
+  }, [villeInfoUpdate]);
 
   const loadCities = async () => {
     try {
       setLoading(true);
       setError(null);
-      const citiesData = await iotCityApi.listCities();
-      setCities(citiesData);
+      
+      // Step 1: Get list of city IDs from saf-control
+      const cityIds = await iotCityApi.listCities();
+      
+      // Step 2: Request detailed info for each city via actor messaging
+      for (const { villeId } of cityIds) {
+        await iotCityApi.requestCityInfo(villeId);
+      }
+      
+      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cities');
       console.error('Failed to load cities:', err);
-    } finally {
       setLoading(false);
     }
   };

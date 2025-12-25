@@ -1,5 +1,8 @@
 package com.acme.saf.actor.core;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
@@ -8,6 +11,15 @@ import java.util.UUID;
  * Base interface for all messages exchanged between actors.
  * Messages are immutable and serializable to support distributed actor systems.
  */
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME,
+    include = JsonTypeInfo.As.PROPERTY,
+    property = "@type",
+    defaultImpl = SimpleMessage.class
+)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = SimpleMessage.class, name = "SimpleMessage")
+})
 public interface Message extends Serializable {
     
     /**

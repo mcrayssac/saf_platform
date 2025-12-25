@@ -138,4 +138,14 @@ public interface ActorContext {
     Mailbox getMailbox();
     
     Actor getActor();
+    
+    // Remote Messaging
+    
+    /**
+     * Set a remote message transport for sending messages to actors in other services.
+     * This is used by HTTP-based actors to enable cross-service communication.
+     * 
+     * @param transport The remote message transport implementation
+     */
+    void setRemoteTransport(RemoteMessageTransport transport);
 }

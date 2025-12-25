@@ -14,6 +14,7 @@ public class DefaultActorSystem implements ActorSystem {
     private final ActorFactory factory;
     private final Map<String, ActorInstance> actors = new ConcurrentHashMap<>();
     private final Mailbox mailbox;
+    private WebSocketMessageSender webSocketSender;  // Optional WebSocket support
 
     public DefaultActorSystem(ActorFactory factory) {
         this(factory, new InMemoryMailbox());
@@ -23,11 +24,23 @@ public class DefaultActorSystem implements ActorSystem {
         this.factory = factory;
         this.mailbox = mailbox;
     }
+    
+    /**
+     * Set WebSocket sender for actor-to-client communication.
+     * This is optional - if not set, actors won't have WebSocket support.
+     */
+    public void setWebSocketSender(WebSocketMessageSender sender) {
+        this.webSocketSender = sender;
+    }
 
     @Override
     public ActorRef spawn(String type, Map<String, Object> params) {
         String id = UUID.randomUUID().toString();
+        return spawn(type, id, params);
+    }
 
+    @Override
+    public ActorRef spawn(String type, String id, Map<String, Object> params) {
         Actor actor = factory.create(type, params);
         if (actor == null) {
             throw new IllegalArgumentException("Type d'acteur non supporté: " + type);
@@ -36,6 +49,18 @@ public class DefaultActorSystem implements ActorSystem {
         ActorRefImpl ref = new ActorRefImpl(id, type, this);
         ActorInstance instance = new ActorInstance(actor, ref);
         actors.put(id, instance);
+
+        // Create and inject ActorContext
+        Logger logger = new SimpleLogger(id);
+        DefaultActorContext context = new DefaultActorContext(ref, logger, mailbox, actor);
+        context.setActorSystem(this);
+        
+        // Inject WebSocket sender if available
+        if (webSocketSender != null) {
+            context.setWebSocketSender(webSocketSender);
+        }
+        
+        injectContext(actor, context);
 
         // Transition to STARTING state
         instance.setState(ActorLifecycleState.STARTING);
@@ -53,6 +78,22 @@ public class DefaultActorSystem implements ActorSystem {
         }
 
         return ref;
+    }
+    
+    /**
+     * Inject ActorContext into actor using reflection if setContext method exists.
+     */
+    private void injectContext(Actor actor, ActorContext context) {
+        try {
+            java.lang.reflect.Method setContextMethod = actor.getClass().getMethod("setContext", ActorContext.class);
+            setContextMethod.invoke(actor, context);
+            System.out.println("ActorContext injected into " + actor.getClass().getSimpleName());
+        } catch (NoSuchMethodException e) {
+            // Actor doesn't have setContext method, that's ok
+        } catch (Exception e) {
+            System.err.println("Failed to inject context: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     @Override

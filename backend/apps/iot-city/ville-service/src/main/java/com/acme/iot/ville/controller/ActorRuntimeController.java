@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ActorRuntimeController extends BaseActorRuntimeController {
     
     public ActorRuntimeController(ActorSystem actorSystem, HttpVilleActorFactory actorFactory) {
-        super(actorSystem, actorFactory, "ville-service");
+        // WebSocket URL: ws://ville-service:8082 in Docker, ws://localhost:8082 in dev
+        super(actorSystem, actorFactory, "ville-service", "ws://ville-service:8082");
     }
 }

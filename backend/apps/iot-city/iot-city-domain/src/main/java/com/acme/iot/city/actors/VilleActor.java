@@ -2,10 +2,13 @@ package com.acme.iot.city.actors;
 
 import com.acme.iot.city.messages.CapteurDataUpdate;
 import com.acme.iot.city.messages.RegisterClient;
+import com.acme.iot.city.messages.RequestVilleInfo;
 import com.acme.iot.city.messages.UnregisterClient;
+import com.acme.iot.city.messages.VilleInfoResponse;
 import com.acme.iot.city.model.ClimateConfig;
 import com.acme.iot.city.model.ClimateReport;
 import com.acme.iot.city.model.SensorReading;
+import com.acme.iot.city.model.VilleInfo;
 import com.acme.saf.actor.core.*;
 
 import java.util.*;
@@ -125,6 +128,16 @@ public class VilleActor implements Actor {
     public void receive(Message message) throws Exception {
         Object payload = message.getPayload();
         
+        // Unwrap SimpleMessage if needed (for remote messages)
+        if (payload instanceof SimpleMessage simpleMsg) {
+            payload = simpleMsg.getPayload();
+        }
+        
+        // Handle Map (from JSON deserialization) - convert to proper message objects
+        if (payload instanceof Map) {
+            payload = convertMapToMessage((Map<?, ?>) payload);
+        }
+        
         if (payload instanceof RegisterClient req) {
             handleRegisterClient(req);
         }
@@ -134,12 +147,105 @@ public class VilleActor implements Actor {
         else if (payload instanceof CapteurDataUpdate update) {
             handleCapteurDataUpdate(update);
         }
+        else if (payload instanceof RequestVilleInfo req) {
+            handleRequestVilleInfo(req);
+        }
         else if (payload instanceof String command) {
             handleStringCommand(command);
         }
         else {
             System.out.println("VilleActor received unknown message: " + payload.getClass().getName());
         }
+    }
+    
+    /**
+     * Convert a Map (from JSON deserialization) to a proper message object.
+     * This handles remote messages that arrive as LinkedHashMap.
+     */
+    @SuppressWarnings("unchecked")
+    private Object convertMapToMessage(Map<?, ?> map) {
+        System.out.println("[DEBUG] convertMapToMessage - Keys: " + map.keySet());
+        
+        // Check if it contains a 'requester' field - likely RequestVilleInfo
+        // This should be checked BEFORE unwrapping payload
+        if (map.containsKey("requester")) {
+            System.out.println("[DEBUG] Found 'requester' field - this is RequestVilleInfo");
+            Object requesterObj = map.get("requester");
+            if (requesterObj instanceof Map) {
+                Map<String, Object> requesterMap = (Map<String, Object>) requesterObj;
+                String actorId = (String) requesterMap.get("actorId");
+                System.out.println("[DEBUG] Requester actorId: " + actorId);
+                
+                if (actorId != null && context != null) {
+                    // Try to get the requester from local context first
+                    ActorRef requester = context.actorFor(actorId);
+                    
+                    // If not found locally and we have remote transport capability
+                    if (requester == null && context instanceof DefaultActorContext) {
+                        DefaultActorContext defaultContext = (DefaultActorContext) context;
+                        RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                        
+                        if (transport != null) {
+                            System.out.println("[DEBUG] Creating RemoteActorRefProxy for: " + actorId);
+                            // Create a RemoteActorRefProxy for the requester
+                            requester = new RemoteActorRefProxy(actorId, transport, context.self());
+                        }
+                    }
+                    
+                    if (requester != null) {
+                        System.out.println("[DEBUG] Created RequestVilleInfo with requester: " + requester.getActorId());
+                        return new RequestVilleInfo(requester);
+                    }
+                }
+            }
+        }
+        
+        // Check if it contains a 'clientRef' field - likely RegisterClient
+        // This should be checked BEFORE unwrapping payload (like ClientActor does with villeInfo)
+        if (map.containsKey("clientRef")) {
+            System.out.println("[DEBUG] Found 'clientRef' field - this is RegisterClient");
+            Object clientRefObj = map.get("clientRef");
+            if (clientRefObj instanceof Map) {
+                Map<String, Object> clientRefMap = (Map<String, Object>) clientRefObj;
+                String actorId = (String) clientRefMap.get("actorId");
+                System.out.println("[DEBUG] ClientRef actorId: " + actorId);
+                
+                if (actorId != null && context != null) {
+                    // Try to get the client from local context first
+                    ActorRef clientRef = context.actorFor(actorId);
+                    
+                    // If not found locally and we have remote transport capability
+                    if (clientRef == null && context instanceof DefaultActorContext) {
+                        DefaultActorContext defaultContext = (DefaultActorContext) context;
+                        RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                        
+                        if (transport != null) {
+                            System.out.println("[DEBUG] Creating RemoteActorRefProxy for client: " + actorId);
+                            // Create a RemoteActorRefProxy for the client
+                            clientRef = new RemoteActorRefProxy(actorId, transport, context.self());
+                        }
+                    }
+                    
+                    if (clientRef != null) {
+                        System.out.println("[DEBUG] Created RegisterClient with clientRef: " + clientRef.getActorId());
+                        return new RegisterClient(clientRef);
+                    }
+                }
+            }
+        }
+        
+        // The message might be wrapped in a SimpleMessage structure
+        // Check for nested payload structure - unwrap if we haven't found a specific message type
+        if (map.containsKey("payload") && map.get("payload") instanceof Map) {
+            System.out.println("[DEBUG] Found nested payload, unwrapping...");
+            Map<String, Object> innerPayload = (Map<String, Object>) map.get("payload");
+            // Recursively process the inner payload
+            return convertMapToMessage(innerPayload);
+        }
+        
+        System.out.println("[DEBUG] Could not convert map, returning as-is");
+        // Return the map as-is if we can't convert it
+        return map;
     }
     
     private void handleRegisterClient(RegisterClient req) {
@@ -155,6 +261,29 @@ public class VilleActor implements Actor {
     private void handleCapteurDataUpdate(CapteurDataUpdate update) {
         latestReadings.put(update.getCapteurId(), update.getReading());
         System.out.println(name + " received sensor reading from " + update.getCapteurId());
+    }
+    
+    /**
+     * Handle request for ville information.
+     * Responds with VilleInfoResponse containing city details.
+     */
+    private void handleRequestVilleInfo(RequestVilleInfo req) {
+        System.out.println(name + " received info request from " + req.getRequester().getActorId());
+        
+        // Build VilleInfo response
+        VilleInfo villeInfo = new VilleInfo(
+            context != null ? context.self().getActorId() : "unknown",
+            name,
+            status,
+            climateConfig,
+            latestReadings.size() // Number of active sensors
+        );
+        
+        // Send response back to requester
+        VilleInfoResponse response = new VilleInfoResponse(villeInfo);
+        req.getRequester().tell(new SimpleMessage(response), context != null ? context.self() : null);
+        
+        System.out.println(name + " sent info response to " + req.getRequester().getActorId());
     }
     
     private void handleStringCommand(String command) {

@@ -11,6 +11,7 @@ public class ActorCreatedResponse {
     private String actorId;
     private String actorType;
     private String serviceId;
+    private String websocketUrl;  // Direct WebSocket URL for this actor
     private ActorLifecycleState state;
     private String errorMessage;
     
@@ -58,6 +59,14 @@ public class ActorCreatedResponse {
     
     public void setServiceId(String serviceId) {
         this.serviceId = serviceId;
+    }
+    
+    public String getWebsocketUrl() {
+        return websocketUrl;
+    }
+    
+    public void setWebsocketUrl(String websocketUrl) {
+        this.websocketUrl = websocketUrl;
     }
     
     public ActorLifecycleState getState() {

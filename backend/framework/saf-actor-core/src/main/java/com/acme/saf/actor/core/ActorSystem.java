@@ -10,12 +10,21 @@ import java.util.List;
 public interface ActorSystem {
 
     /**
-     * Crée et démarre un nouvel acteur.
+     * Crée et démarre un nouvel acteur avec un ID généré automatiquement.
      * @param type Type de l'acteur (ex: "CLIENT", "VILLE", "CAPTEUR")
      * @param params Paramètres de création
      * @return Référence vers l'acteur créé
      */
     ActorRef spawn(String type, Map<String, Object> params);
+
+    /**
+     * Crée et démarre un nouvel acteur avec un ID spécifique.
+     * @param type Type de l'acteur (ex: "CLIENT", "VILLE", "CAPTEUR")
+     * @param id Identifiant unique de l'acteur
+     * @param params Paramètres de création
+     * @return Référence vers l'acteur créé
+     */
+    ActorRef spawn(String type, String id, Map<String, Object> params);
 
     /**
      * Récupère une référence vers un acteur existant.

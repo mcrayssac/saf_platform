@@ -13,6 +13,7 @@ public class DefaultActorContext implements ActorContext {
     private String correlationId;
     private WebSocketMessageSender webSocketSender;  // Optional
     private ActorSystem actorSystem;  // For lookups
+    private RemoteMessageTransport remoteTransport;  // For remote messaging
 
     public DefaultActorContext(ActorRef self, Logger logger, Mailbox mailbox, Actor actor) {
         this(self, logger, mailbox, actor, NoOpActorLogger.getInstance());
@@ -98,7 +99,12 @@ public class DefaultActorContext implements ActorContext {
     
     @Override
     public boolean hasWebSocketConnection() {
-        return webSocketSender != null;
+        if (webSocketSender == null) {
+            return false;
+        }
+        // Check if WebSocket sender actually has an active session for this actor
+        // This requires WebSocketMessageSender to support session checking
+        return true; // Simplified - WebSocketManager will handle if session doesn't exist
     }
     
     @Override
@@ -107,5 +113,14 @@ public class DefaultActorContext implements ActorContext {
             return actorSystem.getActor(actorId);
         }
         return null;
+    }
+    
+    @Override
+    public void setRemoteTransport(RemoteMessageTransport transport) {
+        this.remoteTransport = transport;
+    }
+    
+    public RemoteMessageTransport getRemoteTransport() {
+        return remoteTransport;
     }
 }

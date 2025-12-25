@@ -3,11 +3,12 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { ClimateReport } from './types';
+import type { ClimateReport, VilleInfo } from './types';
 import iotCityApi from './iotCityApi';
 
 interface UseClimateUpdatesResult {
   climateReport: ClimateReport | null;
+  villeInfoUpdate: VilleInfo | null;
   isConnected: boolean;
   connectionError: string | null;
   reconnect: () => void;
@@ -15,6 +16,7 @@ interface UseClimateUpdatesResult {
 
 export function useClimateUpdates(): UseClimateUpdatesResult {
   const [climateReport, setClimateReport] = useState<ClimateReport | null>(null);
+  const [villeInfoUpdate, setVilleInfoUpdate] = useState<VilleInfo | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -41,10 +43,15 @@ export function useClimateUpdates(): UseClimateUpdatesResult {
         try {
           const data = JSON.parse(event.data);
           
-          // Check if it's a ClimateReport
+          // Check if it's a ClimateReport (has aggregatedData)
           if (data.villeId && data.aggregatedData) {
             console.log('📊 Climate report received:', data.villeName);
             setClimateReport(data as ClimateReport);
+          }
+          // Check if it's a VilleInfo (has climateConfig)
+          else if (data.villeId && data.climateConfig) {
+            console.log('🏙️ Ville info received:', data.name);
+            setVilleInfoUpdate(data as VilleInfo);
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
@@ -109,6 +116,7 @@ export function useClimateUpdates(): UseClimateUpdatesResult {
 
   return {
     climateReport,
+    villeInfoUpdate,
     isConnected,
     connectionError,
     reconnect,
