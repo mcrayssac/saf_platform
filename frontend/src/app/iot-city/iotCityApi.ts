@@ -4,7 +4,6 @@
  */
 
 import actorApi from '../agents/actorApi';
-import type { VilleInfo } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1';
 const API_KEY = import.meta.env.VITE_API_KEY || 'test';
@@ -25,11 +24,39 @@ async function authenticatedFetch(url: string, options: RequestInit = {}): Promi
   });
 }
 
+/**
+ * Helper to send a TellActorCommand with proper format
+ * Creates a complete SimpleMessage object that Jackson can deserialize
+ */
+async function sendActorCommand(targetActorId: string, payload: any): Promise<void> {
+  const response = await authenticatedFetch(`${API_BASE}/actors/${targetActorId}/tell`, {
+    method: 'POST',
+    body: JSON.stringify({
+      targetActorId: targetActorId,
+      senderActorId: null,
+      message: {
+        // SimpleMessage fields with @type for Jackson polymorphism
+        '@type': 'SimpleMessage',
+        messageId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        correlationId: null,
+        payload: payload
+      }
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to send actor command: ${response.statusText} - ${errorText}`);
+  }
+}
+
 export const iotCityApi = {
   /**
    * List all available cities (VilleActors in ville-service)
+   * Returns basic list with actor IDs only
    */
-  listCities: async (): Promise<VilleInfo[]> => {
+  listCities: async (): Promise<{ villeId: string }[]> => {
     // Get all actors from ville-service
     const response = await authenticatedFetch(`${API_BASE}/actors/by-service/ville-service`);
     if (!response.ok) {
@@ -37,35 +64,27 @@ export const iotCityApi = {
     }
     const actors = await response.json();
     
-    // Transform actor list to VilleInfo format
+    // Return simple list of ville IDs
     return actors.map((actor: any) => ({
       villeId: actor.actorId,
-      name: actor.properties?.name || 'Unknown',
-      country: actor.properties?.country || 'Unknown',
-      targetTemperature: actor.properties?.targetTemperature || 20.0,
-      targetHumidity: actor.properties?.targetHumidity || 50.0,
-      ...actor.properties,
     }));
   },
 
   /**
-   * Get city information by ID (through saf-control)
+   * Request city information via actor messaging
+   * Sends a message to ClientActor which will request info from VilleActor
+   * Response will come back via WebSocket
    */
-  getCity: async (villeId: string): Promise<VilleInfo> => {
-    const response = await authenticatedFetch(`${API_BASE}/actors/${villeId}`);
-    if (!response.ok) {
-      throw new Error(`Failed to get city: ${response.statusText}`);
+  requestCityInfo: async (villeId: string): Promise<void> => {
+    const actorId = actorApi.getCurrentActorId();
+    if (!actorId) {
+      throw new Error('No active client actor');
     }
-    const actor = await response.json();
-    
-    return {
-      villeId: actor.actorId,
-      name: actor.properties?.name || 'Unknown',
-      country: actor.properties?.country || 'Unknown',
-      targetTemperature: actor.properties?.targetTemperature || 20.0,
-      targetHumidity: actor.properties?.targetHumidity || 50.0,
-      ...actor.properties,
-    };
+
+    // Send as Map payload with "command" key
+    await sendActorCommand(actorId, {
+      command: `GET_VILLE_INFO:${villeId}`
+    });
   },
 
   /**
@@ -73,9 +92,14 @@ export const iotCityApi = {
    * This subscribes the client to receive climate reports via WebSocket
    */
   enterCity: async (villeId: string): Promise<void> => {
-    await actorApi.sendMessageToClient({
-      type: 'ENTER_VILLE',
-      content: { villeId },
+    const actorId = actorApi.getCurrentActorId();
+    if (!actorId) {
+      throw new Error('No active client actor');
+    }
+
+    // Send as Map payload with "command" key
+    await sendActorCommand(actorId, {
+      command: `ENTER:${villeId}`
     });
   },
 
@@ -83,25 +107,36 @@ export const iotCityApi = {
    * Leave current city (CLIENT actor sends UnregisterClient message)
    */
   leaveCity: async (): Promise<void> => {
-    await actorApi.sendMessageToClient({
-      type: 'LEAVE_VILLE',
-      content: {},
+    const actorId = actorApi.getCurrentActorId();
+    if (!actorId) {
+      throw new Error('No active client actor');
+    }
+
+    // Send as Map payload with "command" key
+    await sendActorCommand(actorId, {
+      command: 'LEAVE'
     });
   },
 
   /**
    * Get WebSocket URL for current CLIENT actor
-   * WebSocket connection goes through client-service (routed via saf-control)
+   * Uses the direct WebSocket URL provided by the backend during actor creation
+   * Translates Docker internal URLs to localhost URLs when accessed from browser
    */
   getWebSocketUrl: (): string => {
-    const actorId = actorApi.getCurrentActorId();
-    if (!actorId) {
-      throw new Error('No active actor session');
+    const websocketUrl = actorApi.getCurrentWebSocketUrl();
+    if (!websocketUrl) {
+      throw new Error('No WebSocket URL available. Initialize session first.');
     }
-    // WebSocket connection to client-service via saf-control
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = API_BASE.replace('http://', '').replace('https://', '').replace('/api/v1', '');
-    return `${wsProtocol}//${wsHost}/ws/actors/${actorId}`;
+    
+    // Translate Docker internal URLs to localhost for browser access
+    // ws://client-service:8084 -> ws://localhost:8084
+    // ws://ville-service:8082 -> ws://localhost:8082
+    // ws://capteur-service:8083 -> ws://localhost:8083
+    return websocketUrl
+      .replace('ws://client-service:', 'ws://localhost:')
+      .replace('ws://ville-service:', 'ws://localhost:')
+      .replace('ws://capteur-service:', 'ws://localhost:');
   },
 };
 

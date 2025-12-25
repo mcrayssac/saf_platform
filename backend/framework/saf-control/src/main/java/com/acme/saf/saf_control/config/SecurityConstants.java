@@ -9,8 +9,8 @@ public class SecurityConstants {
         "/swagger-ui/**",
         "/swagger-ui.html",
         "/agents/**",
-        "/api/v1/actors/**",
-        "/api/health"
+        "/api/health",
+        "/ws/**"  // WebSocket endpoints don't support HTTP headers for auth
     };
     
     private SecurityConstants() {

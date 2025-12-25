@@ -23,11 +23,13 @@ public abstract class BaseActorRuntimeController {
     private final ActorSystem actorSystem;
     private final ActorFactory actorFactory;
     private final String serviceName;
+    private final String websocketBaseUrl;
     
-    protected BaseActorRuntimeController(ActorSystem actorSystem, ActorFactory actorFactory, String serviceName) {
+    protected BaseActorRuntimeController(ActorSystem actorSystem, ActorFactory actorFactory, String serviceName, String websocketBaseUrl) {
         this.actorSystem = actorSystem;
         this.actorFactory = actorFactory;
         this.serviceName = serviceName;
+        this.websocketBaseUrl = websocketBaseUrl;
     }
     
     @PostMapping("/create-actor")
@@ -44,13 +46,19 @@ public abstract class BaseActorRuntimeController {
             ActorRef actorRef = actorSystem.spawn(command.getActorType(), command.getParams());
             
             log.info("[{}] Actor created successfully: {}", serviceName, command.getActorId());
-            return ResponseEntity.ok(
-                    ActorCreatedResponse.success(
-                            command.getActorId(),
-                            command.getActorType(),
-                            serviceName
-                    )
+            
+            ActorCreatedResponse response = ActorCreatedResponse.success(
+                    command.getActorId(),
+                    command.getActorType(),
+                    serviceName
             );
+            
+            // Add WebSocket URL for direct connection
+            if (websocketBaseUrl != null && !websocketBaseUrl.isEmpty()) {
+                response.setWebsocketUrl(websocketBaseUrl + "/ws/actors/" + command.getActorId());
+            }
+            
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[{}] Failed to create actor: {}", serviceName, command.getActorId(), e);
             return ResponseEntity.ok(

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 public class ActorRuntimeController extends BaseActorRuntimeController {
     
     public ActorRuntimeController(ActorSystem actorSystem, HttpCapteurActorFactory actorFactory) {
-        super(actorSystem, actorFactory, "capteur-service");
+        // WebSocket URL: ws://capteur-service:8083 in Docker, ws://localhost:8083 in dev
+        super(actorSystem, actorFactory, "capteur-service", "ws://capteur-service:8083");
     }
 }
