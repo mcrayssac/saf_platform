@@ -1,6 +1,13 @@
 spring:
   application:
     name: ville-service
+  kafka:
+    bootstrap-servers: saf-kafka:9092
+    consumer:
+      group-id: ville-climate-listener
+      auto-offset-reset: latest
+    producer:
+      bootstrap-servers: saf-kafka:9092
 
 server:
   port: 8085
