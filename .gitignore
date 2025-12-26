@@ -128,3 +128,4 @@ temp/
 *.md
 !README.md
 !DOCKER.md
+!API_USAGE.md
