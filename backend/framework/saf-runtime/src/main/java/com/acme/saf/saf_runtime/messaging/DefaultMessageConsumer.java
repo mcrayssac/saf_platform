@@ -1,5 +1,8 @@
 package com.acme.saf.saf_runtime.messaging;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.slf4j.Logger;
@@ -30,6 +33,19 @@ public class DefaultMessageConsumer implements MessageConsumer {
     
     // Structure: messageType -> (listener, errorHandler)
     private final ConcurrentMap<String, ListenerEntry<?>> listeners = new ConcurrentHashMap<>();
+    
+    // Shared ObjectMapper with Java 8 time support
+    private static final ObjectMapper sharedObjectMapper = createConfiguredObjectMapper();
+    
+    /**
+     * Creates and configures an ObjectMapper with Java 8 time support.
+     */
+    private static ObjectMapper createConfiguredObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
+    }
     
     public DefaultMessageConsumer(MessageSerializer serializer) {
         if (serializer == null) {
@@ -194,9 +210,8 @@ public class DefaultMessageConsumer implements MessageConsumer {
         if (messageType == null || messageType.isEmpty()) {
             // Strategy 1: Try to parse as MessageEnvelope to get the real type (new format)
             try {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                com.acme.saf.saf_runtime.messaging.MessageEnvelope envelope = 
-                    mapper.readValue(brokerMessage.getPayload(), com.acme.saf.saf_runtime.messaging.MessageEnvelope.class);
+                MessageEnvelope envelope = 
+                    sharedObjectMapper.readValue(brokerMessage.getPayload(), MessageEnvelope.class);
                 if (envelope != null && envelope.getMessageType() != null) {
                     messageType = envelope.getMessageType();
                     brokerMessage.setMessageType(messageType);
@@ -212,8 +227,7 @@ public class DefaultMessageConsumer implements MessageConsumer {
                     try {
                         String candidateType = entry.getKey();
                         ListenerEntry<?> listener = entry.getValue();
-                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                        Object deserializedObj = mapper.readValue(brokerMessage.getPayload(), listener.getMessageClass());
+                        Object deserializedObj = sharedObjectMapper.readValue(brokerMessage.getPayload(), listener.getMessageClass());
                         // If it deserialized successfully, this is likely the right type
                         if (deserializedObj != null) {
                             messageType = candidateType;

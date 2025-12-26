@@ -1,6 +1,8 @@
 package com.acme.saf.saf_runtime.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,8 +23,18 @@ public class JacksonMessageSerializer implements MessageSerializer {
     private final ConcurrentMap<String, Class<?>> messageTypeRegistry;
     
     public JacksonMessageSerializer() {
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = createConfiguredObjectMapper();
         this.messageTypeRegistry = new ConcurrentHashMap<>();
+    }
+    
+    /**
+     * Creates and configures an ObjectMapper with Java 8 time support.
+     */
+    private static ObjectMapper createConfiguredObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
     }
     
     public JacksonMessageSerializer(ObjectMapper objectMapper) {

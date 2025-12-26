@@ -138,9 +138,9 @@ public class VilleActor implements Actor {
     public void preStart() {
         System.out.println("VilleActor started: " + name + " (actorId=" + actorId + ")");
         
-        // Start periodic climate report broadcasting (every 5 seconds)
+        // Start periodic climate report broadcasting (every 10 seconds)
         scheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler.scheduleAtFixedRate(this::broadcastClimateReport, 5, 5, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(this::broadcastClimateReport, 10, 10, TimeUnit.SECONDS);
     }
     
     @Override
@@ -239,33 +239,50 @@ public class VilleActor implements Actor {
             }
         }
         
-        // Check if it contains a 'clientRef' field - likely RegisterClient
-        if (map.containsKey("clientRef")) {
-            System.out.println("[DEBUG] Found 'clientRef' field - this is RegisterClient");
-            Object clientRefObj = map.get("clientRef");
-            if (clientRefObj instanceof Map) {
-                Map<String, Object> clientRefMap = (Map<String, Object>) clientRefObj;
-                String clientActorId = (String) clientRefMap.get("actorId");
-                System.out.println("[DEBUG] ClientRef actorId: " + clientActorId);
+        // Check for RegisterClient - can have 'clientRef' or just 'clientId'
+        if (map.containsKey("clientRef") || map.containsKey("clientId")) {
+            System.out.println("[DEBUG] Found RegisterClient message");
+            String clientActorId = null;
+            
+            // First try to get from clientRef object
+            if (map.containsKey("clientRef")) {
+                Object clientRefObj = map.get("clientRef");
+                if (clientRefObj instanceof Map) {
+                    Map<String, Object> clientRefMap = (Map<String, Object>) clientRefObj;
+                    clientActorId = (String) clientRefMap.get("actorId");
+                }
+            }
+            
+            // Fallback to clientId field directly
+            if (clientActorId == null && map.containsKey("clientId")) {
+                clientActorId = (String) map.get("clientId");
+            }
+            
+            System.out.println("[DEBUG] ClientRef actorId: " + clientActorId);
+            
+            if (clientActorId != null && context != null) {
+                ActorRef clientRef = context.actorFor(clientActorId);
                 
-                if (clientActorId != null && context != null) {
-                    ActorRef clientRef = context.actorFor(clientActorId);
+                if (clientRef == null && context instanceof DefaultActorContext) {
+                    DefaultActorContext defaultContext = (DefaultActorContext) context;
+                    RemoteMessageTransport transport = defaultContext.getRemoteTransport();
                     
-                    if (clientRef == null && context instanceof DefaultActorContext) {
-                        DefaultActorContext defaultContext = (DefaultActorContext) context;
-                        RemoteMessageTransport transport = defaultContext.getRemoteTransport();
-                        
-                        if (transport != null) {
-                            System.out.println("[DEBUG] Creating RemoteActorRefProxy for client: " + clientActorId);
-                            clientRef = new RemoteActorRefProxy(clientActorId, transport, context.self());
-                        }
-                    }
-                    
-                    if (clientRef != null) {
-                        System.out.println("[DEBUG] Created RegisterClient with clientRef: " + clientRef.getActorId());
-                        return new RegisterClient(clientRef);
+                    if (transport != null) {
+                        System.out.println("[DEBUG] Creating RemoteActorRefProxy for client: " + clientActorId);
+                        clientRef = new RemoteActorRefProxy(clientActorId, transport, context.self());
                     }
                 }
+                
+                if (clientRef != null) {
+                    System.out.println("[DEBUG] Created RegisterClient with clientRef: " + clientRef.getActorId());
+                    return new RegisterClient(clientRef);
+                }
+            } else if (clientActorId != null) {
+                // Create RegisterClient with just the clientId (for REST API calls without context)
+                System.out.println("[DEBUG] Creating RegisterClient with clientId only: " + clientActorId);
+                RegisterClient msg = new RegisterClient();
+                msg.setClientId(clientActorId);
+                return msg;
             }
         }
         
@@ -475,6 +492,14 @@ public class VilleActor implements Actor {
     
     public int getRegisteredClientsCount() {
         return registeredClients.size();
+    }
+    
+    /**
+     * Get the map of registered clients.
+     * Protected access for subclasses (like HttpVilleActor).
+     */
+    protected Map<String, ActorRef> getRegisteredClients() {
+        return registeredClients;
     }
 
     public ClimateConfig getClimateConfig() {

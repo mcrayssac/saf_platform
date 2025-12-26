@@ -3,6 +3,7 @@ package com.acme.iot.ville.actor;
 import com.acme.iot.city.actors.VilleActor;
 import com.acme.iot.city.messages.AssociateCapteurToVille;
 import com.acme.iot.city.messages.RegisterCapteur;
+import com.acme.iot.city.model.ClimateReport;
 import com.acme.saf.actor.core.ActorContext;
 import com.acme.saf.actor.core.ActorRef;
 import com.acme.saf.actor.core.RemoteActorRefProxy;
@@ -53,6 +54,41 @@ public class HttpVilleActor extends VilleActor {
     public void preStart() {
         super.preStart();
         System.out.println("HttpVilleActor started with Kafka transport support");
+    }
+    
+    /**
+     * Override to broadcast ClimateReport to registered clients via Kafka.
+     * Called every 5 seconds by the parent scheduler.
+     */
+    @Override
+    protected void onBroadcastClimateReport(ClimateReport report) {
+        if (kafkaTransport == null) {
+            System.out.println(getName() + " climate report (no Kafka): " + aggregateSensorData());
+            return;
+        }
+        
+        int clientCount = getRegisteredClientsCount();
+        if (clientCount == 0) {
+            System.out.println(getName() + " climate report: " + aggregateSensorData() + " (no clients registered)");
+            return;
+        }
+        
+        System.out.println(getName() + " broadcasting ClimateReport to " + clientCount + " clients via Kafka");
+        
+        // Send to each registered client via Kafka
+        for (ActorRef clientRef : getRegisteredClients().values()) {
+            try {
+                ActorRef remoteClient = new RemoteActorRefProxy(
+                    clientRef.getActorId(),
+                    kafkaTransport,
+                    context != null ? context.self() : null
+                );
+                remoteClient.tell(new SimpleMessage(report), context != null ? context.self() : null);
+                System.out.println("  → ClimateReport sent to client " + clientRef.getActorId());
+            } catch (Exception e) {
+                System.err.println("  ✗ Failed to send ClimateReport to " + clientRef.getActorId() + ": " + e.getMessage());
+            }
+        }
     }
     
     /**
