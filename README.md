@@ -21,6 +21,11 @@
   - [Choix techniques](#choix-techniques)
   - [Arborescence du repo](#arborescence-du-repo)
   - [Frontend](#frontend)
+    - [Cycle de vie de la session](#cycle-de-vie-de-la-session)
+    - [Architecture Frontend-Backend](#architecture-frontend-backend)
+    - [Pages](#pages)
+    - [Persistence de session](#persistence-de-session)
+    - [Tech](#tech)
   - [Backend](#backend)
     - [Sécurité (clé API)](#sécurité-clé-api)
       - [Configuration](#configuration)
@@ -120,18 +125,18 @@ Le framework est pensé en **mode framework réutilisable** :
 
 Dans l'architecture actuelle, **chaque type d'acteur vit dans son propre microservice** :
 
-* **Client Service** (port 8082)
+* **Client Service** (port 8084)
   * Héberge les `ClientActor`
   * Chaque acteur représente un utilisateur/client
   * S'enregistre auprès de villes pour recevoir des rapports climatiques
 
-* **Ville Service** (port 8083)
+* **Ville Service** (port 8085)
   * Héberge les `VilleActor`
   * Chaque acteur représente une ville (Paris, Lyon, Marseille)
   * Agrège les données des capteurs de sa ville
   * Envoie des rapports aux clients enregistrés
 
-* **Capteur Service** (port 8084)
+* **Capteur Service** (port 8086)
   * Héberge les `CapteurActor`
   * Chaque acteur représente un capteur (temperature, humidity, pressure)
   * Génère des lectures périodiques
@@ -328,14 +333,87 @@ SAF_PLATFORM/
 
 ## Frontend
 
-* **But** : Piloter la plateforme (créer/détruire des agents, envoyer des messages, visualiser l'état/les logs/les métriques).
-* **Pages** :
+> **Concept clé** : Le frontend est la **vue d'un acteur Client (Vision "Client-Centric")**
 
-  * **Agents** : liste, création/suppression, état en temps réel (WebSocket).
-  * **IoT City** : tableau de bord des villes et capteurs avec mises à jour en temps réel.
-  * **Messaging** : envoi **tell** avec routing automatique.
-* **Tech** : shadcn/ui + Tailwind, React Router, fetch API.
-* **Config** : Les requêtes `/api/*` sont automatiquement proxifiées vers **SAF-Control** par Nginx.
+Chaque instance du frontend représente **un utilisateur/client unique** dans le système d'acteurs :
+
+1. **À l'ouverture** : L'application crée automatiquement un `ClientActor` backend dédié à cette session
+2. **Pendant l'utilisation** : L'interface affiche les données que cet acteur Client reçoit (rapports climatiques des villes auxquelles il est inscrit)
+3. **À la fermeture** : L'acteur Client est automatiquement détruit
+
+### Cycle de vie de la session
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Ouverture navigateur                                           │
+│  └─> initializeSession()                                        │
+│      └─> POST /api/v1/actors                                    │
+│          { serviceId: "client-service", actorType: "ClientActor", │
+│            params: { sessionId, name, email } }                 │
+│      └─> Stockage actorId + websocketUrl dans localStorage      │
+│                                                                 │
+│  Pendant la session                                             │
+│  └─> L'UI affiche les messages reçus par le ClientActor         │
+│  └─> WebSocket pour recevoir les ClimateReports en temps réel   │
+│                                                                 │
+│  Fermeture navigateur                                           │
+│  └─> cleanupSession()                                           │
+│      └─> DELETE /api/v1/actors/{actorId}                        │
+│      └─> Nettoyage localStorage                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Architecture Frontend-Backend
+
+```
+┌─────────────────────┐
+│      Frontend       │  ← Vue d'un seul ClientActor
+│   (React + Vite)    │
+└─────────┬───────────┘
+          │ 1. Crée son ClientActor au démarrage
+          │ 2. Reçoit les ClimateReports via WebSocket
+          ▼
+┌─────────────────────┐
+│    SAF-Control      │
+│   (API Gateway)     │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐     Kafka Topics
+│   client-service    │◄──────────────────┐
+│   (ClientActor)     │                   │
+└─────────────────────┘                   │
+                                          │
+                              ClimateReports
+                                          │
+┌─────────────────────┐                   │
+│   ville-service     │───────────────────┘
+│   (VilleActors)     │
+└─────────────────────┘
+```
+
+### Pages
+
+* **IoT City Dashboard** : Affiche les rapports climatiques reçus par le ClientActor de la session
+  * Température, humidité, pression par ville
+  * Mises à jour en temps réel via WebSocket
+  * Inscription/désinscription aux villes
+
+### Persistence de session
+
+La session est persistée dans `localStorage` pour permettre le rechargement de page sans perte de contexte :
+
+* `saf_session` : ID unique de session
+* `saf_actor_id` : ID de l'acteur Client créé
+* `saf_websocket_url` : URL WebSocket pour les mises à jour temps réel
+
+### Tech
+
+* **React 19 + TypeScript + Vite**
+* **shadcn/ui + Tailwind CSS** : Design system cohérent
+* **fetch API** : Communication avec SAF-Control
+* **localStorage** : Persistence de session
+* **Nginx** : Proxy `/api/*` vers SAF-Control
 
 ---
 
@@ -594,9 +672,9 @@ docker-compose ps
 **Accès :**
 * **Frontend** : http://localhost
 * **SAF-Control API** : http://localhost:8080
-* **Client service** : http://localhost:8082
-* **Ville service** : http://localhost:8083
-* **Capteur service** : http://localhost:8084
+* **Client service** : http://localhost:8084
+* **Ville service** : http://localhost:8085
+* **Capteur service** : http://localhost:8086
 * **Swagger UI** : http://localhost:8080/swagger
 * **Health Check** : http://localhost:8080/actuator/health
 
@@ -662,20 +740,6 @@ Le système de supervision offre :
 - Recovery automatique des services
 - Restart automatique des acteurs en cas d'exception
 - Logs de supervision détaillés pour debugging
-
----
-
-## Feuille de route - Version 2.0 (parties complexes)
-
-1. [x] **Architecture microservices** : SAF-Control + microservices par type d'acteur
-2. [x] **Initialisation par défaut** : 3 villes + 9 capteurs créés automatiquement
-3. [x] **Communication HTTP** : routage via SAF-Control entre microservices
-4. [x] **WebSocket** : mises à jour en temps réel pour le frontend
-5. [x] **Supervision** : système complet à 3 niveaux (infrastructure, acteurs, stratégies)
-6. [x] **Apache Kafka** : communication asynchrone inter-acteurs via Kafka
-7. [ ] **Métriques avancées** : observabilité complète avec Prometheus/Grafana
-8. [ ] **Persistance** : snapshots d'état et event store (optionnel)
-9. [ ] **Scalabilité horizontale** : déploiement multi-instances avec load balancing
 
 ---
 

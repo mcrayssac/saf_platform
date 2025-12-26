@@ -14,6 +14,7 @@ public class RegisterClient implements Message {
     private ActorRef clientRef;
     private String clientId;
     private String villeId;
+    private final String messageType = "RegisterClient"; // Explicit type marker for deserialization
     
     // Default constructor for Jackson
     public RegisterClient() {
@@ -53,6 +54,10 @@ public class RegisterClient implements Message {
     
     public void setVilleId(String villeId) {
         this.villeId = villeId;
+    }
+    
+    public String getMessageType() {
+        return messageType;
     }
     
     @Override

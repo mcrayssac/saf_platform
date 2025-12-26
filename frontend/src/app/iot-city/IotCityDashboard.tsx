@@ -1,43 +1,86 @@
 /**
- * IoT City Dashboard - Main UI for monitoring cities and climate data
+ * IoT City Dashboard - Client-Centric view for monitoring climate data
+ * 
+ * This dashboard represents the view of a single ClientActor.
+ * It creates a ClientActor on mount, connects to WebSocket, and displays
+ * the climate data received by that actor.
+ * 
+ * Maintains history of climate reports per city for the current session.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { ClimateChart } from './ClimateChart';
 import { useClimateUpdates } from './useClimateUpdates';
+import { useClientSession } from './ClientSessionContext';
 import iotCityApi from './iotCityApi';
-import type { VilleInfo } from './types';
+import type { VilleInfo, ClimateReport } from './types';
 
 export function IotCityDashboard() {
+  const { session, isInitializing, error: sessionError } = useClientSession();
+  const { climateReport, villeInfoUpdate, getHistoryForCity, isConnected, connectionError, reconnect } = useClimateUpdates();
+  
   const [cities, setCities] = useState<VilleInfo[]>([]);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const { climateReport, villeInfoUpdate, isConnected, connectionError, reconnect } = useClimateUpdates();
 
-  // Load cities only after WebSocket is connected
+  // Get history for selected city
+  const cityHistory = useMemo(() => {
+    if (!selectedCity) return [];
+    return getHistoryForCity(selectedCity);
+  }, [selectedCity, getHistoryForCity, climateReport]); // climateReport dependency to update when new reports arrive
+
+  // Get latest report for selected city from history (or current climateReport if it matches)
+  const latestReport = useMemo((): ClimateReport | null => {
+    if (!selectedCity) return null;
+    // Use history if available (more recent data at index 0)
+    if (cityHistory.length > 0) {
+      return cityHistory[0];
+    }
+    // Fallback to current climateReport if it matches
+    if (climateReport && climateReport.villeId === selectedCity) {
+      return climateReport;
+    }
+    return null;
+  }, [selectedCity, cityHistory, climateReport]);
+
+  // Load cities when WebSocket is connected (only once)
   useEffect(() => {
-    if (isConnected) {
-      console.log('✅ WebSocket connected - loading cities...');
+    if (session?.actorId && isConnected && cities.length === 0) {
+      console.log('[Dashboard] WebSocket connected - loading cities...');
       loadCities();
     }
-  }, [isConnected]);
+  }, [session?.actorId, isConnected, cities.length]);
 
   // Handle ville info updates from WebSocket
   useEffect(() => {
     if (villeInfoUpdate) {
+      console.log('[Dashboard] VilleInfoUpdate received:', villeInfoUpdate);
       setCities(prevCities => {
-        const existingIndex = prevCities.findIndex(c => c.villeId === villeInfoUpdate.villeId);
-        if (existingIndex >= 0) {
-          // Update existing city
+        // Check for duplicates by villeId AND by name (for robustness)
+        const existingByVilleId = prevCities.findIndex(c => c.villeId === villeInfoUpdate.villeId);
+        const existingByName = prevCities.findIndex(c => c.name === villeInfoUpdate.name);
+        
+        if (existingByVilleId >= 0) {
+          // Update existing city by villeId
           const newCities = [...prevCities];
-          newCities[existingIndex] = villeInfoUpdate;
+          newCities[existingByVilleId] = villeInfoUpdate;
+          console.log('[Dashboard] Updated city by villeId:', villeInfoUpdate.name);
+          return newCities;
+        } else if (existingByName >= 0) {
+          // Update existing city by name (villeId might differ between basic and detailed)
+          const newCities = [...prevCities];
+          newCities[existingByName] = villeInfoUpdate;
+          console.log('[Dashboard] Updated city by name:', villeInfoUpdate.name);
           return newCities;
         } else {
-          // Add new city
+          // Only add if truly new (check name doesn't already exist)
+          console.log('[Dashboard] Adding new city:', villeInfoUpdate.name);
           return [...prevCities, villeInfoUpdate];
         }
       });
@@ -45,31 +88,55 @@ export function IotCityDashboard() {
   }, [villeInfoUpdate]);
 
   const loadCities = async () => {
+    if (!session?.actorId) return;
+    
     try {
       setLoading(true);
       setError(null);
       
-      // Step 1: Get list of city IDs from saf-control
+      // Get list of city IDs from saf-control
       const cityIds = await iotCityApi.listCities();
+      console.log('[Dashboard] Found cities:', cityIds);
       
-      // Step 2: Request detailed info for each city via actor messaging
+      // Create basic VilleInfo objects for now
+      // Full details will come via WebSocket from RequestVilleInfo responses
+      const basicCities: VilleInfo[] = cityIds.map(({ villeId }) => ({
+        villeId,
+        name: `City ${villeId.substring(0, 8)}`,
+        status: 'ACTIVE' as const,
+        capteurCount: 0,
+        registeredClients: 0,
+      }));
+      
+      setCities(basicCities);
+      console.log('[Dashboard] Set cities:', basicCities);
+      
+      // Request detailed info for each city via actor messaging
+      console.log('[Dashboard] Requesting VilleInfo for each city...');
       for (const { villeId } of cityIds) {
-        await iotCityApi.requestCityInfo(villeId);
+        try {
+          await iotCityApi.requestCityInfo(session.actorId, villeId);
+          console.log(`[Dashboard] RequestVilleInfo sent for ${villeId}`);
+        } catch (err) {
+          console.warn(`Failed to request info for city ${villeId}:`, err);
+        }
       }
       
-      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cities');
       console.error('Failed to load cities:', err);
+    } finally {
       setLoading(false);
     }
   };
 
   const handleEnterCity = async (villeId: string) => {
+    if (!session?.actorId) return;
+    
     try {
-      await iotCityApi.enterCity(villeId);
+      await iotCityApi.enterCity(session.actorId, villeId);
       setSelectedCity(villeId);
-      console.log('✅ Entered city:', villeId);
+      console.log('[Dashboard] Entered city:', villeId);
     } catch (err) {
       console.error('Failed to enter city:', err);
       setError(err instanceof Error ? err.message : 'Failed to enter city');
@@ -77,31 +144,60 @@ export function IotCityDashboard() {
   };
 
   const handleLeaveCity = async () => {
+    if (!session?.actorId || !selectedCity) return;
+    
     try {
-      await iotCityApi.leaveCity();
+      await iotCityApi.leaveCity(session.actorId);
       setSelectedCity(null);
-      console.log('✅ Left city');
+      console.log('[Dashboard] Left city');
     } catch (err) {
       console.error('Failed to leave city:', err);
     }
   };
 
-  if (loading) {
+  // Loading state while initializing session
+  if (isInitializing) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading cities...</p>
+          <p className="text-muted-foreground">Initializing session...</p>
+          <p className="text-sm text-muted-foreground mt-2">Creating your ClientActor...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Error state if session failed
+  if (sessionError && !session) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle className="text-destructive">Session Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground mb-4">{sessionError}</p>
+            <Button onClick={reconnect}>Retry Connection</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">IoT City Monitor</h1>
-        <p className="text-muted-foreground">Real-time climate monitoring across cities</p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-4xl font-bold mb-2">IoT City Monitor</h1>
+          <p className="text-muted-foreground">Real-time climate monitoring across cities</p>
+          {session && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Session: {session.sessionId.substring(0, 8)}... | Actor: {session.actorId.substring(0, 8)}...
+            </p>
+          )}
+        </div>
+        <ThemeToggle />
       </div>
 
       {error && (
@@ -124,22 +220,47 @@ export function IotCityDashboard() {
               <CardDescription>Select a city to monitor</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {cities.map((city) => (
-                  <Button
-                    key={city.villeId}
-                    variant={selectedCity === city.villeId ? 'default' : 'outline'}
-                    className="w-full justify-between"
-                    onClick={() => handleEnterCity(city.villeId)}
-                    disabled={selectedCity === city.villeId}
-                  >
-                    <span>{city.name}</span>
-                    <Badge variant={city.status === 'ACTIVE' ? 'default' : 'secondary'}>
-                      {city.status}
-                    </Badge>
+              {loading ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                </div>
+              ) : cities.length === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground text-sm">No cities found</p>
+                  <Button onClick={loadCities} className="mt-2" variant="outline" size="sm">
+                    Refresh
                   </Button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {cities.map((city) => {
+                    const historyCount = getHistoryForCity(city.villeId).length;
+                    const isCurrentCity = selectedCity === city.villeId;
+                    const isInAnyCity = selectedCity !== null;
+                    return (
+                      <Button
+                        key={city.villeId}
+                        variant={isCurrentCity ? 'default' : 'outline'}
+                        className="w-full justify-between"
+                        onClick={() => handleEnterCity(city.villeId)}
+                        disabled={isInAnyCity}
+                      >
+                        <span>{city.name}</span>
+                        <div className="flex items-center gap-2">
+                          {historyCount > 0 && (
+                            <Badge variant="secondary" className="text-xs">
+                              {historyCount} reports
+                            </Badge>
+                          )}
+                          <Badge variant={city.status === 'ACTIVE' ? 'default' : 'secondary'}>
+                            {city.status}
+                          </Badge>
+                        </div>
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
               {selectedCity && (
                 <Button
                   onClick={handleLeaveCity}
@@ -152,7 +273,7 @@ export function IotCityDashboard() {
             </CardContent>
           </Card>
 
-          {/* WebSocket Connection Status */}
+          {/* Connection Status */}
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="text-sm">Connection Status</CardTitle>
@@ -160,7 +281,7 @@ export function IotCityDashboard() {
             <CardContent>
               <div className="flex items-center justify-between">
                 <Badge variant={isConnected ? 'default' : 'secondary'}>
-                  {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+                  {isConnected ? 'Connected' : 'Disconnected'}
                 </Badge>
                 {!isConnected && (
                   <Button size="sm" variant="outline" onClick={reconnect}>
@@ -185,7 +306,7 @@ export function IotCityDashboard() {
                 </p>
               </CardContent>
             </Card>
-          ) : !climateReport ? (
+          ) : !latestReport ? (
             <Card>
               <CardContent className="pt-6 text-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -198,25 +319,26 @@ export function IotCityDashboard() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>{climateReport.villeName}</CardTitle>
+                      <CardTitle>{latestReport.villeName}</CardTitle>
                       <CardDescription>
-                        Last updated: {new Date(climateReport.timestamp).toLocaleTimeString()}
+                        Last updated: {new Date(latestReport.timestampMillis).toLocaleTimeString()}
                       </CardDescription>
                     </div>
-                    <Badge>{climateReport.activeCapteurs} sensors active</Badge>
+                    <Badge>{latestReport.activeCapteurs} sensors active</Badge>
                   </div>
                 </CardHeader>
               </Card>
 
               {/* Climate Metrics */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {Object.entries(climateReport.aggregatedData).map(([type, value]) => (
+                {Object.entries(latestReport.aggregatedData).map(([type, value]) => (
                   <Card key={type}>
                     <CardHeader>
                       <CardTitle className="text-sm font-medium">
-                        {type === 'TEMPERATURE' && '🌡️ Temperature'}
-                        {type === 'PRESSURE' && '🌀 Pressure'}
-                        {type === 'HUMIDITY' && '💧 Humidity'}
+                        {type === 'TEMPERATURE' && 'Temperature'}
+                        {type === 'PRESSURE' && 'Pressure'}
+                        {type === 'HUMIDITY' && 'Humidity'}
+                        {!['TEMPERATURE', 'PRESSURE', 'HUMIDITY'].includes(type) && type}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -237,11 +359,70 @@ export function IotCityDashboard() {
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                     <span className="text-sm text-muted-foreground">
-                      Live updates every 5 seconds
+                      Live updates - Receiving climate reports from {latestReport.villeName}
                     </span>
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Time Series Chart */}
+              {cityHistory.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Climate Time Series</CardTitle>
+                    <CardDescription>
+                      {cityHistory.length} data points collected during this session
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ClimateChart data={cityHistory} />
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* History Panel */}
+              {cityHistory.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Report History</CardTitle>
+                    <CardDescription>
+                      Last 20 reports received
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-48">
+                      <div className="space-y-2">
+                        {cityHistory.slice(0, 20).map((report, index) => (
+                          <div
+                            key={`${report.villeId}-${report.timestampMillis}`}
+                            className={`p-2 rounded text-sm ${index === 0 ? 'bg-primary/10 border border-primary/20' : 'bg-muted'}`}
+                          >
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-medium">
+                                {new Date(report.timestampMillis).toLocaleTimeString()}
+                              </span>
+                              {index === 0 && (
+                                <Badge variant="outline" className="text-xs">Latest</Badge>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                              {report.aggregatedData.TEMPERATURE !== undefined && (
+                                <span>T: {report.aggregatedData.TEMPERATURE.toFixed(1)} C</span>
+                              )}
+                              {report.aggregatedData.HUMIDITY !== undefined && (
+                                <span>H: {report.aggregatedData.HUMIDITY.toFixed(1)}%</span>
+                              )}
+                              {report.aggregatedData.PRESSURE !== undefined && (
+                                <span>P: {report.aggregatedData.PRESSURE.toFixed(0)} hPa</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>
