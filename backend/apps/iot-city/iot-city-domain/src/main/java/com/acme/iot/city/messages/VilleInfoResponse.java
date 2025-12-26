@@ -14,6 +14,11 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 public class VilleInfoResponse implements Message {
     private static final long serialVersionUID = 1L;
     
+    /**
+     * Type hint for Jackson deserialization across Kafka.
+     */
+    private final String messageType = "com.acme.iot.city.messages.VilleInfoResponse";
+    
     private final VilleInfo villeInfo;
     
     @JsonCreator

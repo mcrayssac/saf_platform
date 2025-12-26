@@ -21,7 +21,7 @@ export interface ClimateReport {
   villeName: string;
   aggregatedData: Record<string, number>;
   activeCapteurs: number;
-  timestamp: number;
+  timestampMillis: number;  // Timestamp in milliseconds from backend
 }
 
 export interface VilleInfo {

@@ -93,6 +93,12 @@ public class ClientActor implements Actor {
      */
     @SuppressWarnings("unchecked")
     private Object convertMapToMessage(Map<?, ?> map) {
+        // Check if it's a ClimateReport - has villeId, villeName, aggregatedData, activeCapteurs
+        if (map.containsKey("villeId") && map.containsKey("villeName") && 
+            map.containsKey("aggregatedData") && map.containsKey("activeCapteurs")) {
+            return convertToClimateReport((Map<String, Object>) map);
+        }
+        
         // Check if it contains a 'villeInfo' field - likely VilleInfoResponse
         if (map.containsKey("villeInfo")) {
             Object villeInfoObj = map.get("villeInfo");
@@ -112,6 +118,45 @@ public class ClientActor implements Actor {
         
         // Return the map as-is if we can't convert it
         return map;
+    }
+    
+    /**
+     * Convert a Map to ClimateReport object.
+     */
+    @SuppressWarnings("unchecked")
+    private ClimateReport convertToClimateReport(Map<String, Object> map) {
+        String villeId = (String) map.get("villeId");
+        String villeName = (String) map.get("villeName");
+        int activeCapteurs = ((Number) map.get("activeCapteurs")).intValue();
+        
+        // Parse aggregatedData
+        Map<String, Double> aggregatedData = new java.util.HashMap<>();
+        Object aggDataObj = map.get("aggregatedData");
+        if (aggDataObj instanceof Map) {
+            Map<String, Object> aggMap = (Map<String, Object>) aggDataObj;
+            for (Map.Entry<String, Object> entry : aggMap.entrySet()) {
+                if (entry.getValue() instanceof Number) {
+                    aggregatedData.put(entry.getKey(), ((Number) entry.getValue()).doubleValue());
+                }
+            }
+        }
+        
+        // Get timestamp - might be timestampMillis or timestamp
+        long timestamp;
+        if (map.containsKey("timestampMillis")) {
+            timestamp = ((Number) map.get("timestampMillis")).longValue();
+        } else if (map.containsKey("timestamp")) {
+            Object ts = map.get("timestamp");
+            if (ts instanceof Number) {
+                timestamp = ((Number) ts).longValue();
+            } else {
+                timestamp = System.currentTimeMillis();
+            }
+        } else {
+            timestamp = System.currentTimeMillis();
+        }
+        
+        return new ClimateReport(villeId, villeName, aggregatedData, activeCapteurs, timestamp);
     }
     
     /**

@@ -2,6 +2,7 @@ package com.acme.saf.actor.core;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -11,6 +12,11 @@ import java.util.UUID;
  * Simple implementation of the Message interface.
  * This is a basic message implementation that can be used for common messaging patterns.
  */
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.CLASS,
+    include = JsonTypeInfo.As.PROPERTY,
+    property = "@class"
+)
 public class SimpleMessage implements Message {
     
     private static final long serialVersionUID = 1L;

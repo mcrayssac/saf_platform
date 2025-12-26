@@ -172,6 +172,9 @@ public class VilleActor implements Actor {
         else if (payload instanceof WeatherRequest req) {
             handleWeatherRequest(req);
         }
+        else if (payload instanceof RequestVilleInfo req) {
+            handleRequestVilleInfo(req);
+        }
         else if (payload instanceof String command) {
             handleStringCommand(command);
         }
@@ -187,6 +190,224 @@ public class VilleActor implements Actor {
     @SuppressWarnings("unchecked")
     protected Object convertMapToMessage(Map<?, ?> map) {
         System.out.println("[DEBUG] convertMapToMessage - Keys: " + map.keySet());
+        
+        // HIGHEST PRIORITY: Check for RequestVilleInfo FIRST
+        // The message has: {requester, payload, timestamp, correlationId, messageId}
+        // where "payload" is a copy of "requester" (ActorRef serialization artifact)
+        if (map.containsKey("requester") && !map.containsKey("capteurId") && !map.containsKey("clientId")) {
+            System.out.println("[DEBUG] Found 'requester' field - this is RequestVilleInfo");
+            Object requesterObj = map.get("requester");
+            if (requesterObj instanceof Map) {
+                Map<String, Object> requesterMap = (Map<String, Object>) requesterObj;
+                String reqActorId = (String) requesterMap.get("actorId");
+                System.out.println("[DEBUG] Requester actorId: " + reqActorId);
+                
+                if (reqActorId != null && context != null) {
+                    ActorRef requester = context.actorFor(reqActorId);
+                    
+                    if (requester == null && context instanceof DefaultActorContext) {
+                        DefaultActorContext defaultContext = (DefaultActorContext) context;
+                        RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                        
+                        if (transport != null) {
+                            System.out.println("[DEBUG] Creating RemoteActorRefProxy for requester: " + reqActorId);
+                            requester = new RemoteActorRefProxy(reqActorId, transport, context.self());
+                        }
+                    }
+                    
+                    if (requester != null) {
+                        System.out.println("[DEBUG] Created RequestVilleInfo with requester: " + requester.getActorId());
+                        return new RequestVilleInfo(requester);
+                    }
+                }
+            }
+        }
+        
+        // FIRST: Check for CapteurDataUpdate (contains capteurId and reading)
+        // This must be checked before nested payload processing to avoid recursion issues
+        if (map.containsKey("capteurId") && map.containsKey("reading")) {
+            System.out.println("[DEBUG] Found CapteurDataUpdate message");
+            String capteurId = (String) map.get("capteurId");
+            Object readingObj = map.get("reading");
+            SensorReading reading = parseSensorReading(readingObj);
+            if (reading != null) {
+                return new CapteurDataUpdate(capteurId, reading);
+            }
+        }
+        
+        // PRIORITY 0: Check for nested payload structure (SimpleMessage wrapper)
+        // This handles messages wrapped in SimpleMessage sent via Kafka
+        // Only do this if we don't already have a recognizable message structure
+        if (map.containsKey("payload") && map.get("payload") instanceof Map) {
+            Map<String, Object> innerPayload = (Map<String, Object>) map.get("payload");
+            System.out.println("[DEBUG] Found nested payload, checking inner @class...");
+            
+            // Check if inner payload has @class that indicates UnregisterClient
+            if (innerPayload.containsKey("@class")) {
+                String innerClassName = (String) innerPayload.get("@class");
+                System.out.println("[DEBUG] Inner payload @class: " + innerClassName);
+                if (innerClassName != null && innerClassName.contains("UnregisterClient")) {
+                    System.out.println("[DEBUG] Found UnregisterClient in nested payload");
+                    String clientId = extractClientIdFromMap(innerPayload);
+                    if (clientId != null) {
+                        System.out.println("[DEBUG] Created UnregisterClient with clientId: " + clientId);
+                        return new UnregisterClient(clientId, null);
+                    }
+                }
+                // Handle RegisterClient in nested payload
+                if (innerClassName != null && innerClassName.contains("RegisterClient")) {
+                    System.out.println("[DEBUG] Found RegisterClient in nested payload");
+                    String clientId = extractClientIdFromMap(innerPayload);
+                    if (clientId != null && context != null) {
+                        ActorRef clientRef = context.actorFor(clientId);
+                        if (clientRef == null && context instanceof DefaultActorContext) {
+                            DefaultActorContext defaultContext = (DefaultActorContext) context;
+                            RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                            if (transport != null) {
+                                clientRef = new RemoteActorRefProxy(clientId, transport, context.self());
+                            }
+                        }
+                        if (clientRef != null) {
+                            System.out.println("[DEBUG] Created RegisterClient with clientRef: " + clientRef.getActorId());
+                            return new RegisterClient(clientRef);
+                        }
+                    } else if (clientId != null) {
+                        RegisterClient msg = new RegisterClient();
+                        msg.setClientId(clientId);
+                        return msg;
+                    }
+                }
+            }
+            
+            // Recursively process the inner payload for other message types
+            System.out.println("[DEBUG] Recursively processing nested payload...");
+            return convertMapToMessage(innerPayload);
+        }
+        
+        // PRIORITY 1: Check messageType FIRST - this is the most common format from frontend/API
+        if (map.containsKey("messageType")) {
+            String messageType = (String) map.get("messageType");
+            System.out.println("[DEBUG] Found messageType: " + messageType);
+            
+            if ("UnregisterClient".equals(messageType) || 
+                (messageType != null && messageType.contains("UnregisterClient"))) {
+                System.out.println("[DEBUG] Found UnregisterClient via messageType");
+                String clientId = (String) map.get("clientId");
+                if (clientId != null) {
+                    System.out.println("[DEBUG] Created UnregisterClient with clientId: " + clientId);
+                    return new UnregisterClient(clientId, null);
+                }
+            }
+            
+            if ("RequestVilleInfo".equals(messageType) ||
+                (messageType != null && messageType.contains("RequestVilleInfo"))) {
+                System.out.println("[DEBUG] Found RequestVilleInfo via messageType");
+                Object requesterObj = map.get("requester");
+                if (requesterObj instanceof Map) {
+                    Map<String, Object> requesterMap = (Map<String, Object>) requesterObj;
+                    String reqActorId = (String) requesterMap.get("actorId");
+                    if (reqActorId != null && context != null) {
+                        ActorRef requester = context.actorFor(reqActorId);
+                        if (requester == null && context instanceof DefaultActorContext) {
+                            DefaultActorContext defaultContext = (DefaultActorContext) context;
+                            RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                            if (transport != null) {
+                                requester = new RemoteActorRefProxy(reqActorId, transport, context.self());
+                            }
+                        }
+                        if (requester != null) {
+                            return new RequestVilleInfo(requester);
+                        }
+                    }
+                }
+            }
+            
+            if ("RegisterClient".equals(messageType) ||
+                (messageType != null && messageType.contains("RegisterClient"))) {
+                System.out.println("[DEBUG] Found RegisterClient via messageType");
+                String clientId = (String) map.get("clientId");
+                if (clientId != null && context != null) {
+                    ActorRef clientRef = context.actorFor(clientId);
+                    if (clientRef == null && context instanceof DefaultActorContext) {
+                        DefaultActorContext defaultContext = (DefaultActorContext) context;
+                        RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                        if (transport != null) {
+                            clientRef = new RemoteActorRefProxy(clientId, transport, context.self());
+                        }
+                    }
+                    if (clientRef != null) {
+                        return new RegisterClient(clientRef);
+                    }
+                } else if (clientId != null) {
+                    RegisterClient msg = new RegisterClient();
+                    msg.setClientId(clientId);
+                    return msg;
+                }
+            }
+        }
+        
+        // PRIORITY 2: Check @class to distinguish UnregisterClient from RegisterClient
+        // Both have the same structure (clientRef, clientId) so @class is the only differentiator
+        if (map.containsKey("@class")) {
+            String className = (String) map.get("@class");
+            System.out.println("[DEBUG] Found @class: " + className);
+            
+            if (className != null && className.contains("UnregisterClient")) {
+                System.out.println("[DEBUG] Found UnregisterClient message via @class");
+                // Extract client actor ID from clientRef or clientId
+                String clientActorId = null;
+                if (map.containsKey("clientRef")) {
+                    Object clientRefObj = map.get("clientRef");
+                    if (clientRefObj instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> clientRefMap = (Map<String, Object>) clientRefObj;
+                        clientActorId = (String) clientRefMap.get("actorId");
+                    }
+                }
+                if (clientActorId == null && map.containsKey("clientId")) {
+                    clientActorId = (String) map.get("clientId");
+                }
+                if (clientActorId != null) {
+                    System.out.println("[DEBUG] Created UnregisterClient with clientId: " + clientActorId);
+                    return new UnregisterClient(clientActorId, null);
+                }
+            }
+            
+            if (className != null && className.contains("RegisterClient")) {
+                System.out.println("[DEBUG] Found RegisterClient message via @class");
+                // Use the same logic as the fallback below for RegisterClient
+                String clientActorId = null;
+                if (map.containsKey("clientRef")) {
+                    Object clientRefObj = map.get("clientRef");
+                    if (clientRefObj instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> clientRefMap = (Map<String, Object>) clientRefObj;
+                        clientActorId = (String) clientRefMap.get("actorId");
+                    }
+                }
+                if (clientActorId == null && map.containsKey("clientId")) {
+                    clientActorId = (String) map.get("clientId");
+                }
+                if (clientActorId != null && context != null) {
+                    ActorRef clientRef = context.actorFor(clientActorId);
+                    if (clientRef == null && context instanceof DefaultActorContext) {
+                        DefaultActorContext defaultContext = (DefaultActorContext) context;
+                        RemoteMessageTransport transport = defaultContext.getRemoteTransport();
+                        if (transport != null) {
+                            clientRef = new RemoteActorRefProxy(clientActorId, transport, context.self());
+                        }
+                    }
+                    if (clientRef != null) {
+                        System.out.println("[DEBUG] Created RegisterClient with clientRef: " + clientRef.getActorId());
+                        return new RegisterClient(clientRef);
+                    }
+                } else if (clientActorId != null) {
+                    RegisterClient msg = new RegisterClient();
+                    msg.setClientId(clientActorId);
+                    return msg;
+                }
+            }
+        }
         
         // Check for CapteurDataUpdate (contains capteurId and reading)
         if (map.containsKey("capteurId") && map.containsKey("reading")) {
@@ -239,9 +460,14 @@ public class VilleActor implements Actor {
             }
         }
         
-        // Check for RegisterClient - can have 'clientRef' or just 'clientId'
-        if (map.containsKey("clientRef") || map.containsKey("clientId")) {
-            System.out.println("[DEBUG] Found RegisterClient message");
+        // FALLBACK: Check for RegisterClient without @class (for REST API compatibility)
+        // Only if no @class present (otherwise would have been handled above)
+        // IMPORTANT: Must have clientRef (not just clientId) to avoid false positives
+        // Messages with only clientId could be other message types
+        if (map.containsKey("clientRef") && 
+            !map.containsKey("requester") && !map.containsKey("capteurId") &&
+            !map.containsKey("@class") && !map.containsKey("messageType")) {
+            System.out.println("[DEBUG] Found RegisterClient message (has clientRef)");
             String clientActorId = null;
             
             // First try to get from clientRef object
@@ -295,6 +521,30 @@ public class VilleActor implements Actor {
         
         System.out.println("[DEBUG] Could not convert map, returning as-is");
         return map;
+    }
+    
+    /**
+     * Extract clientId from a Map containing clientRef or clientId fields.
+     */
+    @SuppressWarnings("unchecked")
+    private String extractClientIdFromMap(Map<String, Object> map) {
+        String clientId = null;
+        
+        // First try to get from clientRef object
+        if (map.containsKey("clientRef")) {
+            Object clientRefObj = map.get("clientRef");
+            if (clientRefObj instanceof Map) {
+                Map<String, Object> clientRefMap = (Map<String, Object>) clientRefObj;
+                clientId = (String) clientRefMap.get("actorId");
+            }
+        }
+        
+        // Fallback to clientId field directly
+        if (clientId == null && map.containsKey("clientId")) {
+            clientId = (String) map.get("clientId");
+        }
+        
+        return clientId;
     }
     
     /**
@@ -402,6 +652,34 @@ public class VilleActor implements Actor {
                              ", clients=" + registeredClients.size() + 
                              ", capteurs=" + registeredCapteurs.size() +
                              ", sensors=" + latestReadings.size());
+        }
+    }
+    
+    /**
+     * Handle RequestVilleInfo - respond with VilleInfo to the requester.
+     * This allows clients to request information about this city.
+     */
+    private void handleRequestVilleInfo(RequestVilleInfo req) {
+        System.out.println(name + " received RequestVilleInfo from " + 
+                          (req.getRequester() != null ? req.getRequester().getActorId() : "unknown"));
+        
+        // Create VilleInfo with current city information
+        com.acme.iot.city.model.VilleInfo villeInfo = new com.acme.iot.city.model.VilleInfo(
+            actorId,
+            name,
+            status,
+            climateConfig,
+            registeredCapteurs.size()
+        );
+        
+        // Send response back to requester
+        ActorRef requester = req.getRequester();
+        if (requester != null && context != null) {
+            VilleInfoResponse response = new VilleInfoResponse(villeInfo);
+            requester.tell(new SimpleMessage(response), context.self());
+            System.out.println(name + " sent VilleInfoResponse to " + requester.getActorId());
+        } else {
+            System.out.println(name + " cannot send VilleInfoResponse: requester or context is null");
         }
     }
     

@@ -219,13 +219,13 @@ echo ""
 echo "Step 6: Clients entering cities (RegisterClient)..."
 echo "-----------------------------------"
 
-send_message "$PARIS_ID" "RegisterClient" "{\"clientId\":\"$ALICE_ID\"}"
+send_message "$PARIS_ID" "RegisterClient" "{\"messageType\":\"RegisterClient\",\"clientId\":\"$ALICE_ID\"}"
 echo "  Alice entered Paris"
 
-send_message "$LYON_ID" "RegisterClient" "{\"clientId\":\"$BOB_ID\"}"
+send_message "$LYON_ID" "RegisterClient" "{\"messageType\":\"RegisterClient\",\"clientId\":\"$BOB_ID\"}"
 echo "  Bob entered Lyon"
 
-send_message "$MARSEILLE_ID" "RegisterClient" "{\"clientId\":\"$CHARLIE_ID\"}"
+send_message "$MARSEILLE_ID" "RegisterClient" "{\"messageType\":\"RegisterClient\",\"clientId\":\"$CHARLIE_ID\"}"
 echo "  Charlie entered Marseille"
 
 echo ""
