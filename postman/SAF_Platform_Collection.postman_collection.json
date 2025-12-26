@@ -1,0 +1,694 @@
+{
+  "info": {
+    "_postman_id": "saf-platform-collection-v1",
+    "name": "SAF Platform - IoT City API",
+    "description": "Collection complète pour tester l'API SAF Platform IoT City.\n\n## Variables d'environnement requises\n- `baseUrl`: URL de base (défaut: http://localhost:8080)\n- `apiKey`: Clé API (défaut: test)\n\n## Ordre d'exécution recommandé\n1. Health Checks\n2. Create Actors (Capteur, Ville, Client)\n3. Send Messages (RegisterCapteur, RegisterClient)\n4. Query Actors",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "test",
+      "type": "string"
+    },
+    {
+      "key": "villeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "capteurId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "clientId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Checks",
+      "item": [
+        {
+          "name": "SAF Control Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Vérifie que SAF Control est en bonne santé"
+          }
+        },
+        {
+          "name": "Client Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8084/actuator/health",
+              "host": ["http://localhost:8084"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Vérifie que Client Service est en bonne santé"
+          }
+        },
+        {
+          "name": "Ville Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8085/actuator/health",
+              "host": ["http://localhost:8085"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Vérifie que Ville Service est en bonne santé"
+          }
+        },
+        {
+          "name": "Capteur Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8086/actuator/health",
+              "host": ["http://localhost:8086"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Vérifie que Capteur Service est en bonne santé"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Service Discovery",
+      "item": [
+        {
+          "name": "List All Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "services"]
+            },
+            "description": "Liste tous les services enregistrés auprès de SAF Control"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Actors",
+      "item": [
+        {
+          "name": "Create CapteurActor (Temperature)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('capteurId', jsonData.actorId);",
+                  "    console.log('Capteur ID saved:', jsonData.actorId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"capteur-service\",\n  \"actorType\": \"CapteurActor\",\n  \"params\": {\n    \"sensorType\": \"TEMPERATURE\",\n    \"location\": \"Tour Eiffel\",\n    \"minValue\": -10.0,\n    \"maxValue\": 45.0,\n    \"unit\": \"C\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée un capteur de température"
+          }
+        },
+        {
+          "name": "Create CapteurActor (Humidity)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"capteur-service\",\n  \"actorType\": \"CapteurActor\",\n  \"params\": {\n    \"sensorType\": \"HUMIDITY\",\n    \"location\": \"Louvre\",\n    \"minValue\": 20.0,\n    \"maxValue\": 95.0,\n    \"unit\": \"%\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée un capteur d'humidité"
+          }
+        },
+        {
+          "name": "Create CapteurActor (Pressure)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"capteur-service\",\n  \"actorType\": \"CapteurActor\",\n  \"params\": {\n    \"sensorType\": \"PRESSURE\",\n    \"location\": \"Notre-Dame\",\n    \"minValue\": 970.0,\n    \"maxValue\": 1040.0,\n    \"unit\": \"hPa\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée un capteur de pression"
+          }
+        },
+        {
+          "name": "Create VilleActor (Paris)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('villeId', jsonData.actorId);",
+                  "    console.log('Ville ID saved:', jsonData.actorId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"ville-service\",\n  \"actorType\": \"VilleActor\",\n  \"params\": {\n    \"nom\": \"Paris\",\n    \"population\": 2161000,\n    \"superficie\": 105.4\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée une ville (Paris)"
+          }
+        },
+        {
+          "name": "Create VilleActor (Lyon)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"ville-service\",\n  \"actorType\": \"VilleActor\",\n  \"params\": {\n    \"nom\": \"Lyon\",\n    \"population\": 516092,\n    \"superficie\": 47.87\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée une ville (Lyon)"
+          }
+        },
+        {
+          "name": "Create ClientActor (Alice)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('clientId', jsonData.actorId);",
+                  "    console.log('Client ID saved:', jsonData.actorId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"client-service\",\n  \"actorType\": \"ClientActor\",\n  \"params\": {\n    \"clientName\": \"Alice\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée un client (Alice)"
+          }
+        },
+        {
+          "name": "Create ClientActor (Bob)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"client-service\",\n  \"actorType\": \"ClientActor\",\n  \"params\": {\n    \"clientName\": \"Bob\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Crée un client (Bob)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Query Actors",
+      "item": [
+        {
+          "name": "List All Actors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors"]
+            },
+            "description": "Liste tous les acteurs enregistrés"
+          }
+        },
+        {
+          "name": "List Actors by Service (client-service)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/by-service/client-service",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "by-service", "client-service"]
+            },
+            "description": "Liste tous les ClientActors"
+          }
+        },
+        {
+          "name": "List Actors by Service (ville-service)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/by-service/ville-service",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "by-service", "ville-service"]
+            },
+            "description": "Liste tous les VilleActors"
+          }
+        },
+        {
+          "name": "List Actors by Service (capteur-service)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/by-service/capteur-service",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "by-service", "capteur-service"]
+            },
+            "description": "Liste tous les CapteurActors"
+          }
+        },
+        {
+          "name": "Get Actor Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{villeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{villeId}}"]
+            },
+            "description": "Récupère les détails d'un acteur spécifique"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Send Messages",
+      "item": [
+        {
+          "name": "RegisterCapteur to Ville",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetActorId\": \"{{villeId}}\",\n  \"senderActorId\": \"system\",\n  \"message\": {\n    \"@class\": \"com.acme.saf.actor.core.SimpleMessage\",\n    \"messageId\": \"{{$guid}}\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"correlationId\": null,\n    \"payload\": {\n      \"capteurId\": \"{{capteurId}}\",\n      \"capteurType\": \"TEMPERATURE\",\n      \"kafkaTopic\": \"capteur-temperature-paris\",\n      \"location\": \"Tour Eiffel\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{villeId}}/tell",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{villeId}}", "tell"]
+            },
+            "description": "Enregistre un capteur auprès d'une ville"
+          }
+        },
+        {
+          "name": "RegisterClient to Ville",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetActorId\": \"{{villeId}}\",\n  \"senderActorId\": \"system\",\n  \"message\": {\n    \"@class\": \"com.acme.saf.actor.core.SimpleMessage\",\n    \"messageId\": \"{{$guid}}\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"correlationId\": null,\n    \"payload\": {\n      \"messageType\": \"RegisterClient\",\n      \"clientId\": \"{{clientId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{villeId}}/tell",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{villeId}}", "tell"]
+            },
+            "description": "Enregistre un client auprès d'une ville (le client entre dans la ville)"
+          }
+        },
+        {
+          "name": "UnregisterClient from Ville",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetActorId\": \"{{villeId}}\",\n  \"senderActorId\": \"system\",\n  \"message\": {\n    \"@class\": \"com.acme.saf.actor.core.SimpleMessage\",\n    \"messageId\": \"{{$guid}}\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"correlationId\": null,\n    \"payload\": {\n      \"messageType\": \"UnregisterClient\",\n      \"clientId\": \"{{clientId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{villeId}}/tell",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{villeId}}", "tell"]
+            },
+            "description": "Désenregistre un client d'une ville (le client quitte la ville)"
+          }
+        },
+        {
+          "name": "RequestVilleInfo via Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetActorId\": \"{{clientId}}\",\n  \"senderActorId\": null,\n  \"message\": {\n    \"@class\": \"com.acme.saf.actor.core.SimpleMessage\",\n    \"messageId\": \"{{$guid}}\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"correlationId\": null,\n    \"payload\": {\n      \"command\": \"GET_VILLE_INFO:{{villeId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{clientId}}/tell",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{clientId}}", "tell"]
+            },
+            "description": "Demande les informations d'une ville via un ClientActor"
+          }
+        },
+        {
+          "name": "Enter City via Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetActorId\": \"{{clientId}}\",\n  \"senderActorId\": null,\n  \"message\": {\n    \"@class\": \"com.acme.saf.actor.core.SimpleMessage\",\n    \"messageId\": \"{{$guid}}\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"correlationId\": null,\n    \"payload\": {\n      \"command\": \"ENTER:{{villeId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{clientId}}/tell",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{clientId}}", "tell"]
+            },
+            "description": "Le client entre dans une ville (s'abonne aux ClimateReports)"
+          }
+        },
+        {
+          "name": "Leave City via Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetActorId\": \"{{clientId}}\",\n  \"senderActorId\": null,\n  \"message\": {\n    \"@class\": \"com.acme.saf.actor.core.SimpleMessage\",\n    \"messageId\": \"{{$guid}}\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"correlationId\": null,\n    \"payload\": {\n      \"command\": \"LEAVE\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/actors/{{clientId}}/tell",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "actors", "{{clientId}}", "tell"]
+            },
+            "description": "Le client quitte sa ville actuelle (se désabonne des ClimateReports)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "SAF Control Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "Récupère les métriques Prometheus de SAF Control"
+          }
+        },
+        {
+          "name": "Client Service Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8084/actuator/prometheus",
+              "host": ["http://localhost:8084"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "Récupère les métriques Prometheus de Client Service"
+          }
+        },
+        {
+          "name": "Ville Service Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8085/actuator/prometheus",
+              "host": ["http://localhost:8085"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "Récupère les métriques Prometheus de Ville Service"
+          }
+        },
+        {
+          "name": "Capteur Service Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8086/actuator/prometheus",
+              "host": ["http://localhost:8086"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "Récupère les métriques Prometheus de Capteur Service"
+          }
+        }
+      ]
+    }
+  ]
+}
