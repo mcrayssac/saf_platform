@@ -23,11 +23,13 @@ public abstract class BaseActorRuntimeController {
     private final ActorSystem actorSystem;
     private final ActorFactory actorFactory;
     private final String serviceName;
+    private final String websocketBaseUrl;
     
-    protected BaseActorRuntimeController(ActorSystem actorSystem, ActorFactory actorFactory, String serviceName) {
+    protected BaseActorRuntimeController(ActorSystem actorSystem, ActorFactory actorFactory, String serviceName, String websocketBaseUrl) {
         this.actorSystem = actorSystem;
         this.actorFactory = actorFactory;
         this.serviceName = serviceName;
+        this.websocketBaseUrl = websocketBaseUrl;
     }
     
     @PostMapping("/create-actor")
@@ -35,17 +37,29 @@ public abstract class BaseActorRuntimeController {
         log.info("[{}] Creating actor: type={}, id={}", serviceName, command.getActorType(), command.getActorId());
         
         try {
-            // Use ActorSystem spawn with parameters
-            ActorRef actorRef = actorSystem.spawn(command.getActorType(), command.getParams());
+            // Add actorId to params so factory implementations can use it
+            if (command.getParams() != null && command.getActorId() != null) {
+                command.getParams().put("actorId", command.getActorId());
+            }
+            
+            // Use ActorSystem spawn with the ID provided by saf-control
+            // This ensures the distributed registry and local actor system use the same ID
+            ActorRef actorRef = actorSystem.spawn(command.getActorType(), command.getActorId(), command.getParams());
             
             log.info("[{}] Actor created successfully: {}", serviceName, command.getActorId());
-            return ResponseEntity.ok(
-                    ActorCreatedResponse.success(
-                            command.getActorId(),
-                            command.getActorType(),
-                            serviceName
-                    )
+            
+            ActorCreatedResponse response = ActorCreatedResponse.success(
+                    command.getActorId(),
+                    command.getActorType(),
+                    serviceName
             );
+            
+            // Add WebSocket URL for direct connection
+            if (websocketBaseUrl != null && !websocketBaseUrl.isEmpty()) {
+                response.setWebsocketUrl(websocketBaseUrl + "/ws/actors/" + command.getActorId());
+            }
+            
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[{}] Failed to create actor: {}", serviceName, command.getActorId(), e);
             return ResponseEntity.ok(

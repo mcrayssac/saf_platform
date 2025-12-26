@@ -51,18 +51,30 @@ docker-compose ps
 
 All services should show as "healthy" after initialization.
 
-### 4. Access the Application
+### 4. Initialize IoT City Application
+
+After all services are healthy, run the initialization script:
+
+```bash
+./scripts/init-iot-city.sh
+```
+
+This creates:
+- **9 Capteurs**: 3 per city (temperature, humidity, pressure)
+- **3 Villes**: Paris, Lyon, Marseille
+- **3 Clients**: Alice, Bob, Charlie
+- Associations between capteurs and villes via Kafka
+
+### 5. Access the Application
 
 - **Frontend**: http://localhost
 - **SAF-Control API**: http://localhost:8080
-- **Client service**: http://localhost:8082
-- **Ville service**: http://localhost:8083
-- **Capteur service**: http://localhost:8084
+- **Client service**: http://localhost:8084
+- **Ville service**: http://localhost:8085
+- **Capteur service**: http://localhost:8086
 - **Swagger UI**: http://localhost:8080/swagger
 - **Health Check**: http://localhost:8080/actuator/health
 - **Prometheus UI**: http://localhost:9090
-
-**Note**: The 3 default cities (Paris, Lyon, Marseille) with their sensors are automatically created on startup.
 
 ## Service Architecture
 
@@ -85,7 +97,7 @@ All services should show as "healthy" after initialization.
 │  - Distributed Actor Registry           │
 │  - Service Discovery                    │
 │  - Actor Creation & Management          │
-│  - Default City Initialization          │
+│  - Service Health Monitoring            │
 └──────────┬──────────────────────────────┘
            │
            │ HTTP calls to create/manage actors
@@ -95,24 +107,34 @@ All services should show as "healthy" after initialization.
     ┌──────────┐ ┌──────────┐ ┌──────────┐
     │ client-  │ │  ville-  │ │ capteur- │
     │ service  │ │ service  │ │ service  │
-    │ :8082    │ │ :8083    │ │ :8084    │
+    │ :8084    │ │ :8085    │ │ :8086    │
     │          │ │          │ │          │
     │ Client   │ │ Ville    │ │ Capteur  │
     │ Actors   │ │ Actors   │ │ Actors   │
-    └──────────┘ └──────────┘ └──────────┘
-           │          │          │
-           └──────────┴──────────┴──────────┐
-                                            ▼
-                                   ┌─────────────────┐
-                                   │   Prometheus    │
-                                   │   (Port 9090)   │
-                                   └─────────────────┘
+    └────┬─────┘ └────┬─────┘ └────┬─────┘
+         │            │            │
+         │            │            │
+         │     ┌──────┴──────┐     │
+         │     │             │     │
+         └────►│   KAFKA     │◄────┘
+               │  (9092)     │
+               │             │
+               │  Topics:    │
+               │  actor-*    │
+               └──────┬──────┘
+                      │
+                      ▼
+              ┌─────────────────┐
+              │   Prometheus    │
+              │   (Port 9090)   │
+              └─────────────────┘
 ```
 
 **Architecture Notes**:
 - **SAF-Control** is the central orchestrator that manages all actor microservices
 - Each **IoT microservice** hosts specific actor types using SAF-Runtime base classes
-- Actors communicate via HTTP through SAF-Control's routing layer
+- **HTTP** is used for actor creation, management, and synchronous operations via SAF-Control
+- **Apache Kafka** is used for asynchronous inter-actor communication between microservices
 
 ## Docker Compose Commands
 
@@ -196,40 +218,44 @@ docker-compose up -d --build
   - Distributed actor registry
   - Service discovery
   - Actor creation/management via HTTP
-  - Default city initialization (3 cities + sensors)
   - API authentication
 - **Environment Variables**:
   - `SPRING_PROFILES_ACTIVE`: Spring profile (default: prod)
   - `SAF_SECURITY_API_KEY`: API key for authentication
-  - `SAF_INIT_ENABLED`: Enable/disable default cities initialization (default: true)
-  - `SAF_INIT_DELAY`: Delay before initialization in seconds (default: 5)
   - `JAVA_OPTS`: JVM options (default: -Xmx512m -Xms256m)
 
 ### Client Service (Spring Boot)
 
 - **Container**: `client-service`
-- **Port**: 8082
+- **Port**: 8084
 - **Role**: Hosts ClientActor instances
 - **Health Check**: `/actuator/health`
 - **Actors**: Each ClientActor represents a user/client subscribing to city climate updates
+- **Environment Variables**:
+  - `KAFKA_BROKERS`: Kafka broker address (default: kafka:9092)
+  - `SAF_CONTROL_URL`: SAF-Control URL for registration
 
 ### Ville Service (Spring Boot)
 
 - **Container**: `ville-service`
-- **Port**: 8083
+- **Port**: 8085
 - **Role**: Hosts VilleActor instances
 - **Health Check**: `/actuator/health`
 - **Actors**: Each VilleActor represents a city that aggregates sensor data
-- **Default Cities**: Paris, Lyon, Marseille (auto-created on startup)
+- **Environment Variables**:
+  - `KAFKA_BROKERS`: Kafka broker address (default: kafka:9092)
+  - `SAF_CONTROL_URL`: SAF-Control URL for registration
 
 ### Capteur Service (Spring Boot)
 
 - **Container**: `capteur-service`
-- **Port**: 8084
+- **Port**: 8086
 - **Role**: Hosts CapteurActor instances
 - **Health Check**: `/actuator/health`
 - **Actors**: Each CapteurActor represents a sensor (temperature, humidity, pressure)
-- **Default Sensors**: 3 sensors per city (9 total, auto-created on startup)
+- **Environment Variables**:
+  - `KAFKA_BROKERS`: Kafka broker address (default: kafka:9092)
+  - `SAF_CONTROL_URL`: SAF-Control URL for registration
 
 ### Frontend (React + Nginx)
 
@@ -244,6 +270,106 @@ docker-compose up -d --build
   - SPA routing support
   - Security headers
   - Dark/Light theme support
+
+## Apache Kafka Messaging
+
+The platform uses **Apache Kafka** for asynchronous inter-actor communication between microservices.
+
+### Kafka Architecture
+
+```
+┌─────────────────┐     Kafka Topics      ┌─────────────────┐
+│ capteur-service │ ─────────────────────>│  ville-service  │
+│   (CapteurActor)│   actor-{villeId}     │   (VilleActor)  │
+│                 │   SensorReading       │                 │
+└─────────────────┘                       └────────┬────────┘
+                                                   │
+                                    actor-{clientId}│ ClimateReport
+                                                   ▼
+                                         ┌─────────────────┐
+                                         │ client-service  │
+                                         │  (ClientActor)  │
+                                         └─────────────────┘
+```
+
+### Message Flows via Kafka
+
+1. **Capteur → Ville (SensorReading)**
+   - Topic: `actor-{villeActorId}`
+   - Message: `CapteurDataUpdate` with sensor reading
+   - Frequency: Every 5 seconds per sensor
+   - Contains: temperature, humidity, or pressure data
+
+2. **Ville → Client (ClimateReport)**
+   - Topic: `actor-{clientActorId}`
+   - Message: `ClimateReport` with aggregated data
+   - Frequency: Every 10 seconds (broadcast to registered clients)
+   - Contains: aggregated temperature, humidity, pressure averages
+
+3. **Ville → Capteur (AssociateCapteurToVille)**
+   - Topic: `actor-{capteurActorId}`
+   - Message: Climate configuration for the sensor
+   - Frequency: Once when sensor registers with city
+
+### Kafka Configuration
+
+Each microservice connects to Kafka with the following configuration:
+
+```yaml
+spring:
+  kafka:
+    bootstrap-servers: kafka:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: ${service-name}-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+```
+
+### Kafka Service Details
+
+- **Container**: `kafka`
+- **Internal Port**: 9092 (for microservices)
+- **External Port**: 29092 (for debugging)
+- **Dependency**: Zookeeper (`zookeeper:2181`)
+
+### Monitoring Kafka
+
+```bash
+# View Kafka logs
+docker-compose logs -f kafka
+
+# List topics
+docker-compose exec kafka kafka-topics --list --bootstrap-server localhost:9092
+
+# View messages on a topic
+docker-compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic actor-<actorId> --from-beginning
+```
+
+### Troubleshooting Kafka
+
+**Kafka not starting:**
+```bash
+# Check Zookeeper is running
+docker-compose logs zookeeper
+
+# Restart Kafka
+docker-compose restart kafka
+```
+
+**Messages not being received:**
+```bash
+# Check consumer group offsets
+docker-compose exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 --group ville-service-group --describe
+
+# Check service logs for Kafka connection
+docker-compose logs ville-service | grep -i kafka
+```
+
+---
 
 ## Platform Notes
 
@@ -263,15 +389,17 @@ The platform implements a **true microservices architecture** where:
 3. **SAF-Control orchestrates everything**:
    - Maintains distributed actor registry
    - Routes actor creation requests to appropriate microservices
-   - Initializes default configuration (3 cities + sensors)
+   - Monitors service health and availability
 
-### Default Initialization
+### Manual Initialization
 
-On startup, SAF-Control automatically creates:
-- **3 Cities**: Paris, Lyon, Marseille (via ville-service)
-- **9 Sensors**: 3 per city (temperature, humidity, pressure via capteur-service)
+The IoT City application requires **manual initialization** via the `init-iot-city.sh` script after all services are healthy. This approach provides:
 
-This can be disabled by setting `SAF_INIT_ENABLED=false` in the environment.
+- Clear separation between framework (SAF) and application (IoT City)
+- Explicit control over what gets created
+- Reproducible setup via a single script
+
+See the [Quick Start](#quick-start) section for initialization instructions.
 
 ### ARM64 / Apple Silicon Support
 
@@ -391,13 +519,13 @@ Check service health:
 curl http://localhost:8080/actuator/health
 
 # Client service health
-curl http://localhost:8082/actuator/health
+curl http://localhost:8084/actuator/health
 
 # Ville service health
-curl http://localhost:8083/actuator/health
+curl http://localhost:8085/actuator/health
 
 # Capteur service health
-curl http://localhost:8084/actuator/health
+curl http://localhost:8086/actuator/health
 
 # Frontend (returns 200 if healthy)
 curl -I http://localhost/
@@ -410,9 +538,9 @@ docker-compose ps
 
 Prometheus metrics available at:
 - SAF-Control: http://localhost:8080/actuator/prometheus
-- Client service: http://localhost:8082/actuator/prometheus
-- Ville service: http://localhost:8083/actuator/prometheus
-- Capteur service: http://localhost:8084/actuator/prometheus
+- Client service: http://localhost:8084/actuator/prometheus
+- Ville service: http://localhost:8085/actuator/prometheus
+- Capteur service: http://localhost:8086/actuator/prometheus
 
 Prometheus UI (scraping all services):
 - http://localhost:9090
@@ -462,7 +590,7 @@ Use Docker Compose for production deployment:
 3. Set appropriate resource limits
 4. Enable monitoring and logging
 5. Use external database if needed
-6. Consider disabling default initialization: `SAF_INIT_ENABLED=false`
+6. Use the init script for controlled initialization
 
 ## Network Configuration
 

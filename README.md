@@ -34,22 +34,18 @@
     - [Script d'Initialisation](#script-dinitialisation)
     - [Fonctionnement du Script](#fonctionnement-du-script)
     - [Utilisation](#utilisation)
+    - [Résultat Final](#résultat-final)
     - [Vérification](#vérification)
-    - [Idempotence](#idempotence)
+    - [Réinitialisation](#réinitialisation)
   - [Démarrage local](#démarrage-local)
-    - [Option 1 : Docker Compose](#option-1--docker-compose)
-    - [Option 2 (dépréciée) : Développement natif](#option-2-dépréciée--développement-natif)
-      - [Frontend](#frontend-1)
-      - [Backend](#backend-1)
-        - [SAF-Control (framework)](#saf-control-framework)
-        - [Microservices IoT City](#microservices-iot-city)
+    - [Docker Compose](#docker-compose)
   - [Conventions \& qualité](#conventions--qualité)
   - [Système de Supervision](#système-de-supervision)
     - [1. Supervision des Microservices (Infrastructure)](#1-supervision-des-microservices-infrastructure)
     - [2. Endpoints de Santé des Acteurs (Application)](#2-endpoints-de-santé-des-acteurs-application)
     - [3. Supervision Locale Automatique (Application)](#3-supervision-locale-automatique-application)
     - [Résilience Complète](#résilience-complète)
-  - [Feuille de route](#feuille-de-route)
+  - [Feuille de route - Version 2.0 (parties complexes)](#feuille-de-route---version-20-parties-complexes)
   - [Licence](#licence)
 
 ---
@@ -146,7 +142,7 @@ Dans l'architecture actuelle, **chaque type d'acteur vit dans son propre microse
 > - Les **clients** (UI, scripts) parlent à **SAF-Control**.
 > - **SAF-Control** route les demandes de création d'acteurs vers les **microservices appropriés** via HTTP.
 > - Chaque **microservice** utilise SAF-Runtime comme base et fournit sa propre `ActorFactory`.
-> - Les **acteurs communiquent** entre eux via HTTP en passant par SAF-Control qui maintient le registre.
+> - Les **acteurs communiquent** entre eux via **Apache Kafka** de manière asynchrone (topics `actor-{actorId}`).
 
 ### Flux type
 
@@ -169,11 +165,16 @@ Dans l'architecture actuelle, **chaque type d'acteur vit dans son propre microse
 5. Microservice → **Control** : confirmation
 6. Control → Client : confirmation de livraison
 
-**Communication inter-acteurs**
+**Communication inter-acteurs (via Kafka)**
 
-- Les acteurs communiquent via leurs `ActorRef`
-- Les messages sont routés via **SAF-Control** qui connaît la localisation de chaque acteur
-- Communication **HTTP synchrone** (pas de broker message pour le moment)
+- Les acteurs communiquent via **Apache Kafka** de manière asynchrone
+- Chaque acteur possède un topic Kafka dédié : `actor-{actorId}`
+- Les messages sont publiés directement sur le topic de l'acteur destinataire
+- **Flux de messages** :
+  - `CapteurActor` → `VilleActor` : données de capteurs (température, humidité, pression)
+  - `VilleActor` → `ClientActor` : rapports climatiques agrégés
+  - `VilleActor` → `CapteurActor` : configuration climatique
+- Communication **asynchrone** et **découplée** (fire-and-forget)
 
 ---
 
@@ -186,10 +187,11 @@ Dans l'architecture actuelle, **chaque type d'acteur vit dans son propre microse
 
   * Simplicité de packaging, support natif observabilité/métriques, écosystème mature.
   * **Virtual Threads** (Loom) possibles pour concu élevée & code lisible.
-* **Communication** : **HTTP/REST** pour la communication inter-services
+* **Communication** : **HTTP/REST + Apache Kafka** pour la communication inter-services
 
-  * SAF-Control comme API Gateway et registre central
-  * Communication synchrone entre microservices
+  * SAF-Control comme API Gateway et registre central pour la gestion des acteurs
+  * **Apache Kafka** pour la communication asynchrone inter-acteurs entre microservices
+  * Communication hybride : HTTP pour les commandes, Kafka pour les messages entre acteurs
 * **Architecture microservices** : **Un microservice par type d'acteur**
 
   * Isolation, scalabilité indépendante, déploiement séparé
@@ -466,13 +468,15 @@ Un script bash est fourni pour créer la configuration initiale :
 ```
 
 **Ce script crée automatiquement :**
+* **9 Capteurs** : 3 par ville (température, humidité, pression)
 * **3 Villes** : Paris, Lyon, Marseille
-* **6 Clients** : 2 clients par ville
-* **9 Capteurs** : 3 capteurs par ville (température, humidité, pression)
+* **9 Associations capteur-ville** : via messages `RegisterCapteur`
+* **3 Clients** : Alice, Bob, Charlie
+* **3 Inscriptions clients** : via messages `RegisterClient`
 
 ### Fonctionnement du Script
 
-Le script effectue les opérations suivantes :
+Le script effectue les opérations suivantes **dans l'ordre** :
 
 1. **Vérification de santé** : Attend que tous les services soient opérationnels
    - SAF-Control (port 8080)
@@ -480,19 +484,27 @@ Le script effectue les opérations suivantes :
    - Ville Service (port 8085)
    - Capteur Service (port 8086)
 
-2. **Création des villes** : Envoie des requêtes API pour créer les VilleActors
+2. **Création des capteurs (Step 2)** : 9 CapteurActors via capteur-service
+   - Paris : temp-paris (Tour Eiffel), hum-paris (Louvre), pres-paris (Notre-Dame)
+   - Lyon : temp-lyon (Fourvière), hum-lyon (Place Bellecour), pres-lyon (Parc Tête d'Or)
+   - Marseille : temp-marseille (Vieux-Port), hum-marseille (Notre-Dame de la Garde), pres-marseille (Calanques)
+
+3. **Création des villes (Step 3)** : 3 VilleActors via ville-service
    - Paris (2.1M habitants, 105.4 km²)
    - Lyon (516K habitants, 47.87 km²)
    - Marseille (870K habitants, 240.62 km²)
 
-3. **Création des clients** : Crée 2 ClientActors par ville
-   - S'enregistrent auprès de leur ville
-   - Recevront les rapports climatiques
+4. **Association capteurs-villes (Step 4)** : Messages `RegisterCapteur` envoyés aux villes
+   - Associe chaque capteur à sa ville
+   - Inclut le topic Kafka pour la communication via Kafka
 
-4. **Création des capteurs** : Crée 3 CapteurActors par ville
-   - Capteur de température
-   - Capteur d'humidité
-   - Capteur de pression
+5. **Création des clients (Step 5)** : 3 ClientActors via client-service
+   - Alice, Bob, Charlie (créés sans affectation initiale)
+
+6. **Inscription des clients (Step 6)** : Messages `RegisterClient` envoyés aux villes
+   - Alice → Paris
+   - Bob → Lyon
+   - Charlie → Marseille
 
 ### Utilisation
 
@@ -500,13 +512,28 @@ Le script effectue les opérations suivantes :
 
 ```bash
 # 1. Démarrer tous les services
-docker-compose up -d
+docker compose up -d
 
 # 2. Attendre que les services soient healthy (environ 60s)
-docker-compose ps
+docker compose ps
 
 # 3. Exécuter le script d'initialisation
 ./scripts/init-iot-city.sh
+```
+
+### Résultat Final
+
+```
+État après initialisation :
+  Paris:
+    - Capteurs: temp-paris, hum-paris, pres-paris
+    - Client: Alice
+  Lyon:
+    - Capteurs: temp-lyon, hum-lyon, pres-lyon
+    - Client: Bob
+  Marseille:
+    - Capteurs: temp-marseille, hum-marseille, pres-marseille
+    - Client: Charlie
 ```
 
 ### Vérification
@@ -515,38 +542,41 @@ Après l'exécution du script, vous pouvez vérifier que les acteurs ont été c
 
 ```bash
 # Lister tous les acteurs
-curl -H "X-API-KEY: mock-secret" http://localhost:8080/api/v1/actors
+curl -H "X-API-KEY: test" http://localhost:8080/api/v1/actors
 
 # Vérifier les services enregistrés
-curl -H "X-API-KEY: mock-secret" http://localhost:8080/api/v1/services
+curl -H "X-API-KEY: test" http://localhost:8080/api/v1/services
 ```
 
-### Idempotence
+### Réinitialisation
 
-Le script est **idempotent** : si les acteurs existent déjà, les requêtes de création échoueront mais le script continuera. Pour réinitialiser complètement :
+Pour réinitialiser complètement l'application :
 
 ```bash
-# Arrêter et supprimer tous les conteneurs
-docker-compose down
+# Arrêter et supprimer tous les conteneurs et volumes
+docker compose down -v
 
 # Redémarrer
-docker-compose up -d
+docker compose up -d
+
+# Attendre que les services soient healthy (~60s)
+docker compose ps
 
 # Réexécuter le script
 ./scripts/init-iot-city.sh
 ```
 
+> **Note** : Le flag `-v` est important pour supprimer les volumes Kafka et réinitialiser complètement l'état du système.
+
 ---
 
 ## Démarrage local
 
-Deux options sont disponibles pour démarrer la plateforme localement :
+Pour démarrer la plateforme localement :
 
-### Option 1 : Docker Compose
+### Docker Compose
 
 > **Pré-requis** : Docker Engine 20.10+, Docker Compose V2+, au moins 2 Go de RAM disponible.
-
-Pour déployer la plateforme avec Docker Compose (recommandé pour les tests et le déploiement), consultez le guide complet : **[DOCKER.md](./DOCKER.md)**
 
 **Démarrage rapide :**
 
@@ -571,68 +601,6 @@ docker-compose ps
 * **Health Check** : http://localhost:8080/actuator/health
 
 Pour plus de détails (architecture, commandes, dépannage, sécurité), voir **[DOCKER.md](./DOCKER.md)**.
-
-
-### Option 2 (dépréciée) : Développement natif
-
-> **Pré-requis** : Node.js ≥ 20, pnpm (ou npm), Java 21.
-
-#### Frontend
-
-```bash
-cd frontend
-pnpm i
-pnpm dev
-# http://localhost:5173
-```
-
-#### Backend
-
-##### SAF-Control (framework)
-
-```bash
-cd backend/framework/saf-control
-./mvnw spring-boot:run
-```
-
-**Endpoints disponibles :**
-
-* **Santé** : `GET http://localhost:8080/actuator/health`
-* **OpenAPI** : `GET http://localhost:8080/swagger`
-* **API** : `GET http://localhost:8080/api/v1/actors` (avec header `X-API-KEY`)
-
-##### Microservices IoT City
-
-Démarrer les 3 microservices (dans des terminaux séparés) :
-
-```bash
-# Client service (port 8082)
-cd backend/apps/iot-city/client-service
-mvn spring-boot:run
-```
-
-```bash
-# Ville service (port 8083)
-cd backend/apps/iot-city/ville-service
-mvn spring-boot:run
-```
-
-```bash
-# Capteur service (port 8084)
-cd backend/apps/iot-city/capteur-service
-mvn spring-boot:run
-```
-
-**Vérification :**
-
-```bash
-# Vérifier que les services sont enregistrés
-curl -H "X-API-KEY: test" http://localhost:8080/api/v1/services
-
-# Vérifier les acteurs créés automatiquement
-curl -H "X-API-KEY: test" http://localhost:8080/api/v1/actors
-```
-
 
 ---
 
@@ -697,16 +665,16 @@ Le système de supervision offre :
 
 ---
 
-## Feuille de route
+## Feuille de route - Version 2.0 (parties complexes)
 
 1. [x] **Architecture microservices** : SAF-Control + microservices par type d'acteur
 2. [x] **Initialisation par défaut** : 3 villes + 9 capteurs créés automatiquement
 3. [x] **Communication HTTP** : routage via SAF-Control entre microservices
 4. [x] **WebSocket** : mises à jour en temps réel pour le frontend
 5. [x] **Supervision** : système complet à 3 niveaux (infrastructure, acteurs, stratégies)
-6. [ ] **Métriques avancées** : observabilité complète avec Prometheus/Grafana
-7. [ ] **Persistance** : snapshots d'état et event store (optionnel)
-8. [ ] **Broker message** : intégration Kafka/RabbitMQ pour communication async (optionnel)
+6. [x] **Apache Kafka** : communication asynchrone inter-acteurs via Kafka
+7. [ ] **Métriques avancées** : observabilité complète avec Prometheus/Grafana
+8. [ ] **Persistance** : snapshots d'état et event store (optionnel)
 9. [ ] **Scalabilité horizontale** : déploiement multi-instances avec load balancing
 
 ---

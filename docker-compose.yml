@@ -1,4 +1,45 @@
 services:
+  # Zookeeper - Kafka coordination
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: saf-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - saf-network
+    restart: unless-stopped
+
+  # Kafka - Message broker for inter-pod messaging
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: saf-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+    networks:
+      - saf-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   # SAF Control - Central registry and coordination service
   saf-control:
     build:
@@ -32,6 +73,8 @@ services:
     depends_on:
       saf-control:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     ports:
       - "8084:8084"
     environment:
@@ -39,6 +82,8 @@ services:
       SAF_CONTROL_URL: http://saf-control:8080
       SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
       SERVICE_URL: http://client-service:8084
+      KAFKA_BROKERS: kafka:9092
+      MESSAGING_BROKER_TYPE: kafka
       JAVA_OPTS: -Xmx256m -Xms128m
     networks:
       - saf-network
@@ -59,6 +104,8 @@ services:
     depends_on:
       saf-control:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     ports:
       - "8085:8085"
     environment:
@@ -66,6 +113,8 @@ services:
       SAF_CONTROL_URL: http://saf-control:8080
       SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
       SERVICE_URL: http://ville-service:8085
+      KAFKA_BROKERS: kafka:9092
+      MESSAGING_BROKER_TYPE: kafka
       JAVA_OPTS: -Xmx256m -Xms128m
     networks:
       - saf-network
@@ -86,6 +135,8 @@ services:
     depends_on:
       saf-control:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     ports:
       - "8086:8086"
     environment:
@@ -93,6 +144,8 @@ services:
       SAF_CONTROL_URL: http://saf-control:8080
       SAF_CONTROL_API_KEY: ${SAF_API_KEY:-mock-secret}
       SERVICE_URL: http://capteur-service:8086
+      KAFKA_BROKERS: kafka:9092
+      MESSAGING_BROKER_TYPE: kafka
       JAVA_OPTS: -Xmx256m -Xms128m
     networks:
       - saf-network

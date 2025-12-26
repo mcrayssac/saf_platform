@@ -1,5 +1,8 @@
 package com.acme.saf.actor.core;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -25,7 +28,12 @@ public class SimpleMessage implements Message {
         this(UUID.randomUUID().toString(), Instant.now(), correlationId, payload);
     }
     
-    public SimpleMessage(String messageId, Instant timestamp, String correlationId, Object payload) {
+    @JsonCreator
+    public SimpleMessage(
+            @JsonProperty("messageId") String messageId,
+            @JsonProperty("timestamp") Instant timestamp,
+            @JsonProperty("correlationId") String correlationId,
+            @JsonProperty("payload") Object payload) {
         this.messageId = messageId;
         this.timestamp = timestamp;
         this.correlationId = correlationId;

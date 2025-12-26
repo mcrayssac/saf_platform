@@ -9,6 +9,7 @@ const API_KEY = import.meta.env.VITE_API_KEY || 'test';
 // Session management in localStorage
 const SESSION_KEY = 'saf_session';
 const ACTOR_ID_KEY = 'saf_actor_id';
+const WEBSOCKET_URL_KEY = 'saf_websocket_url';
 
 interface ActorCreateRequest {
   serviceId: string;
@@ -20,6 +21,7 @@ interface ActorResponse {
   actorId: string;
   actorType: string;
   serviceId: string;
+  websocketUrl?: string;
   state: string;
   success: boolean;
   errorMessage?: string;
@@ -64,11 +66,26 @@ function setActorId(actorId: string): void {
 }
 
 /**
+ * Get stored WebSocket URL from localStorage
+ */
+function getWebSocketUrl(): string | null {
+  return localStorage.getItem(WEBSOCKET_URL_KEY);
+}
+
+/**
+ * Store WebSocket URL in localStorage
+ */
+function setWebSocketUrl(url: string): void {
+  localStorage.setItem(WEBSOCKET_URL_KEY, url);
+}
+
+/**
  * Clear session and actor ID
  */
 function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(ACTOR_ID_KEY);
+  localStorage.removeItem(WEBSOCKET_URL_KEY);
 }
 
 /**
@@ -125,7 +142,14 @@ export const actorApi = {
     
     setActorId(actorResponse.actorId);
     
-    console.log('✅ Session initialized:', { sessionId, actorId: actorResponse.actorId });
+    // Store WebSocket URL if provided
+    if (actorResponse.websocketUrl) {
+      setWebSocketUrl(actorResponse.websocketUrl);
+      console.log('✅ Session initialized:', { sessionId, actorId: actorResponse.actorId, websocketUrl: actorResponse.websocketUrl });
+    } else {
+      console.log('✅ Session initialized:', { sessionId, actorId: actorResponse.actorId });
+    }
+    
     return actorResponse;
   },
 
@@ -134,6 +158,13 @@ export const actorApi = {
    */
   getCurrentActorId: (): string | null => {
     return getActorId();
+  },
+
+  /**
+   * Get current session's WebSocket URL
+   */
+  getCurrentWebSocketUrl: (): string | null => {
+    return getWebSocketUrl();
   },
 
   /**
